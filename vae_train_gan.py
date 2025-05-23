@@ -18,7 +18,7 @@ def denormalize_waveform(waveform, mean, std):
 def kl_divergence_loss(mu, logvar):
     return -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
 
-def compute_chunkwise_stats_loss(fake_music, real_music, num_chunks=100, lambda_mean=0.1, lambda_std=0.1, lambda_max=0.05):
+def compute_chunkwise_stats_loss(fake_music, real_music, num_chunks=100, lambda_mean=0.1, lambda_std=0.1, lambda_max=0.05):  # num_chunks = 200
     batch_size, n_channels, seq_len = real_music.size()
     chunk_len = seq_len // num_chunks
     local_mean_loss = 0

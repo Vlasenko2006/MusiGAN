@@ -25,14 +25,14 @@ epochs = 30000
 pretrain_epochs = 8  # Pretraining epochs for the generator
 sample_rate = 16000
 seq_len = 120000
-learning_rate = 0.0000051 
-learning_rate_disc = .0001
+learning_rate = 0.0000051 #*0.25 
+learning_rate_disc = .0001 #*0.25
 n_channels = 2
 
-accumulation_steps = 8 * 2 * 4
-checkpoint_folder_load = "checkpoints_gan_music_chunk_100"
-checkpoint_folder = "checkpoints_gan_music_chunk_100"
-music_out_folder = "music_out_gan_music_chunk_100"
+accumulation_steps = 8 * 2 * 4 #* 4
+checkpoint_folder_load = "checkpoints_gan_music_double"
+checkpoint_folder = "checkpoints_gan_music_double"
+music_out_folder = "music_out_gan_music_double"
 noise_dim = seq_len  # Dimensionality of noise input to the generator
 smoothing = 0.05  # Label smoothing for discriminator
 save_after_nepochs = 10
@@ -81,8 +81,9 @@ if resume_from_checkpoint:
     start_epoch = load_checkpoint(discriminator_path, discriminator, d_optimizer)
 
 # Pretrain the generator
-load_decoder_weights(generator, "../Lets_Rock/checkpoints_trans5/model_epoch_20.pt")
+
 if start_epoch == 1:
+    load_decoder_weights(generator, "../Lets_Rock/checkpoints_trans5/model_epoch_20.pt")
     print("Pretraining the generator...")
     pretrain_generator(generator, 
                        train_loader, 

@@ -43,7 +43,7 @@ class AudioDataset(Dataset):
         return target_norm, target_mean, target_std
 
 class VariationalAttentionModel(nn.Module):
-    def __init__(self, num_heads=8, num_layers=1, n_channels=96, n_seq=3, sound_channels=2, seq_len=120000, latent_dim=128):
+    def __init__(self, num_heads=8, num_layers=1, n_channels=96, n_seq=3, sound_channels=2, seq_len=120000, latent_dim=128 ): # *4
         super(VariationalAttentionModel, self).__init__()
         self.latent_dim = latent_dim
         self.variational_encoder_decoder = VariationalEncoderDecoder(
