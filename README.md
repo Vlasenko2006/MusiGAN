@@ -94,4 +94,52 @@ How closely the generated samples match the real data (using Smooth L1 or MSE).
 
 ---
 
-*Monitor these values during training to ensure your GAN is progressing and producing quality results!*
+
+## Check_discriminator.py
+
+
+# Discriminator Loss Trend Analysis for Generator Checkpoint 690
+
+## Overview
+Cheks the discriminator's performance over epochs for a given generator's checkpoint (690 in the example below).
+
+
+![Discriminator_over_epochs](https://github.com/Vlasenko2006/MusiGAN/blob/main/discriminator_over_epochs.png)
+
+
+## Interpretation
+
+- **Early Discriminators (Low Epochs, Very Low Loss):**
+  - Discriminators trained at earlier epochs are easily fooled by the generator at epoch 690.
+  - Their loss is extremely low, indicating they classify the generator’s fakes as "real" with high confidence.
+  - This is expected, as the generator has adapted far beyond what these early discriminators have seen.
+
+- **Mid-to-Late Discriminators (Rising Loss):**
+  - As you progress to more recent discriminator checkpoints, their loss when judging fakes rises steadily.
+  - This means newer discriminators are better at detecting the generator's fakes—i.e., they are not as easily fooled.
+  - The generator's samples look less "real" to these more recent discriminators.
+
+- **Latest Discriminators (High Loss):**
+  - The most recent discriminators (epochs 690, 700) have the highest loss.
+  - This indicates the discriminators are correctly identifying the generator's fakes as "fake" more often.
+
+## What This Says About Training
+
+- **Healthy GAN Dynamics:**
+  - The generator is able to fool older discriminators but is challenged by newer ones. This "arms race" is at the heart of adversarial training.
+- **No Mode Collapse or Instability:**
+  - If all losses stayed low, your discriminator would not be learning. If all were high, the generator would be failing. The smooth, rising trend is desirable.
+- **Progression:**
+  - The generator and discriminator are pushing each other to improve, which is the sign of a healthy training regime.
+
+## Summary Table
+
+| Discriminator Epoch | Mean d_loss (label=real) | Interpretation                      |
+|---------------------|--------------------------|-------------------------------------|
+| 540 - ~590          | ~0.0003 → ~0.0003        | Discriminator fooled (old D)        |
+| ~600 - ~640         | 0.0025 → 0.0089          | D catching up, less fooled          |
+| 650 - 690           | 0.0458 → 0.5882          | D strong, generator challenged      |
+
+## Conclusion
+
+Your GAN training is progressing well, with generator and discriminator in a healthy adversarial contest. This is the ideal pattern for productive GAN development: the generator outsmarts old discriminators, but is pushed by new ones to improve further.
