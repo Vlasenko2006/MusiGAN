@@ -21,7 +21,7 @@ learning_rate = 0.0000051
 checkpoint_folder_load = "../../checkpoints/"
 noise_dim = seq_len
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-resume_from_epoch = [540, 560]
+resume_from_epoch = [540, 690]
 
 # Prepare generator
 generator = VariationalAttentionModel(sound_channels=n_channels, seq_len=seq_len).to(device)
