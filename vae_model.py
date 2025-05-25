@@ -43,7 +43,7 @@ class AudioDataset(Dataset):
         return target_norm, target_mean, target_std
 
 class VariationalAttentionModel(nn.Module):
-    def __init__(self, num_heads=8, num_layers=1, n_channels=96, n_seq=3, sound_channels=2, seq_len=120000, latent_dim=128 ): # *4
+    def __init__(self, num_heads=8, num_layers=1, n_channels=96, n_seq=3, sound_channels=2, seq_len=120000, latent_dim=128 * 4): # *4
         super(VariationalAttentionModel, self).__init__()
         self.latent_dim = latent_dim
         self.variational_encoder_decoder = VariationalEncoderDecoder(
@@ -64,11 +64,12 @@ class VariationalAttentionModel(nn.Module):
         if len(x.shape) != 3:
             raise ValueError(f"Expected input to have 3 dimensions [batch_size, input_dim, seq_len], but got {x.shape}")
         batch_size, input_dim, seq_len = x.shape
-        mu, logvar = self.variational_encoder_decoder.encoder(x)
-        z = self.variational_encoder_decoder.reparameterize(mu, logvar)
-        z = z.permute(1, 0).unsqueeze(-1)
-        z = z.repeat(1, 1, self.latent_dim)
-        transformer_out = self.transformer(z)
-        transformer_out = transformer_out.permute(1, 0, 2).mean(dim=-1)
-        reconstructed = self.variational_encoder_decoder.decoder(transformer_out)
+        mu, logvar = self.variational_encoder_decoder.encoder(x)   # [batch, latent_seq_len, latent_dim]
+        z = self.variational_encoder_decoder.reparameterize(mu, logvar)  # [batch, latent_seq_len, latent_dim]
+        z = z.permute(1, 0, 2)  # [latent_seq_len, batch, latent_dim]
+        #print("z.shape", z.shape)
+        transformer_out = self.transformer(z)  # [latent_seq_len, batch, latent_dim]
+        #print("transformer_out.shape", transformer_out.shape)
+        transformer_out = transformer_out.permute(1, 0, 2)  # [batch, latent_seq_len, latent_dim]
+        reconstructed = self.variational_encoder_decoder.decoder(transformer_out)  # (decoder must accept sequence!)
         return reconstructed, mu, logvar

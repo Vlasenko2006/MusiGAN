@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 class VariationalEncoderDecoder(nn.Module):
-    def __init__(self, input_dim, num_heads=2, num_layers=1, n_channels=64, n_seq=3, latent_dim=128):
+    def __init__(self, input_dim, num_heads=2, num_layers=1, n_channels=64, n_seq=1, latent_dim=128):
         super(VariationalEncoderDecoder, self).__init__()
 
         self.latent_dim = latent_dim
@@ -32,13 +32,13 @@ class VariationalEncoderDecoder(nn.Module):
         # Final pooling to reduce sequence length
         self.final_pooling = nn.AdaptiveAvgPool1d(n_seq * 1000)  # Encoded length
 
-        # Fully connected layers for latent space
-        self.fc_mu = nn.Linear(n_channels * n_seq * 1000, latent_dim)  # Mean of latent space
-        self.fc_logvar = nn.Linear(n_channels * n_seq * 1000, latent_dim)  # Log-variance of latent space
+        # Fully connected layers for latent space (per position)
+        self.fc_mu = nn.Linear(n_channels, latent_dim)
+        self.fc_logvar = nn.Linear(n_channels, latent_dim)
 
-        # Projection layer to map latent_dim to decoder input size
-        self.latent_to_decoder = nn.Linear(latent_dim, n_channels * n_seq * 1000)
-
+        # Projection layer to map latent_dim to decoder input size, PER POSITION
+        self.latent_to_decoder = nn.Linear(latent_dim, n_channels)
+        
         # Decoder: Designed as the inverse of the encoder
         self.decoder_conv1 = nn.ConvTranspose1d(
             in_channels=n_channels,
@@ -79,7 +79,7 @@ class VariationalEncoderDecoder(nn.Module):
 
     def encoder(self, x):
         """
-        Encoder: Takes input and encodes it into a smaller representation.
+        Encoder: Takes input and encodes it into a sequence of latent vectors suitable for transformer input.
         
         Outputs mean (mu) and log-variance (logvar) for the latent space.
 
@@ -88,25 +88,24 @@ class VariationalEncoderDecoder(nn.Module):
 
         Returns:
             Tuple[torch.Tensor, torch.Tensor]:
-                - mu: Mean of the latent space.
-                - logvar: Log-variance of the latent space.
+                - mu: Mean of the latent space. [batch_size, n_seq * 1000, latent_dim]
+                - logvar: Log-variance of the latent space. [batch_size, n_seq * 1000, latent_dim]
         """
         batch_size = x.size(0)
 
-        x = self.encoder_conv1(x)  # Shape: [batch_size, 128, reduced_seq_len]
-        x = self.encoder_bn1(x)  # Apply batch normalization
-        x = self.pooling1(x)  # Shape: [batch_size, 128, reduced_seq_len // 2]
+        x = self.encoder_conv1(x)  # [batch, 128, L]
+        x = self.encoder_bn1(x)
+        x = self.pooling1(x)       # [batch, 128, L//2]
 
-        x = self.encoder_conv2(x)  # Shape: [batch_size, n_channels, smaller_seq_len]
-        x = self.encoder_bn2(x)  # Apply batch normalization
-        x = self.final_pooling(x)  # Shape: [batch_size, n_channels, n_seq * 1000]
+        x = self.encoder_conv2(x)  # [batch, n_channels, L']
+        x = self.encoder_bn2(x)
+        x = self.final_pooling(x)  # [batch, n_channels, n_seq*1000]
 
-        # Flatten for fully connected layers
-        x = x.view(batch_size, -1)  # Shape: [batch_size, n_channels * n_seq * 1000]
+        # Now we want to treat the sequence dimension as sequence, and apply FC per position
+        x = x.permute(0, 2, 1)  # [batch, n_seq*1000, n_channels]
 
-        # Latent space mean and log-variance
-        mu = self.fc_mu(x)  # Shape: [batch_size, latent_dim]
-        logvar = self.fc_logvar(x)  # Shape: [batch_size, latent_dim]
+        mu = self.fc_mu(x)      # [batch, n_seq*1000, latent_dim]
+        logvar = self.fc_logvar(x)  # [batch, n_seq*1000, latent_dim]
 
         return mu, logvar
 
@@ -115,61 +114,33 @@ class VariationalEncoderDecoder(nn.Module):
         Reparameterization trick: Allows backpropagation through the stochastic sampling process.
 
         Args:
-            mu (torch.Tensor): Mean of the latent space.
-            logvar (torch.Tensor): Log-variance of the latent space.
+            mu (torch.Tensor): Mean of the latent space. [batch, seq, latent_dim]
+            logvar (torch.Tensor): Log-variance of the latent space. [batch, seq, latent_dim]
 
         Returns:
-            torch.Tensor: Sampled latent vector.
+            torch.Tensor: Sampled latent vector. [batch, seq, latent_dim]
         """
-        std = torch.exp(0.5 * logvar)  # Standard deviation
-        eps = torch.randn_like(std)  # Random noise
-        return mu + eps * std  # Sampled latent vector
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return mu + eps * std
 
     def decoder(self, z):
-        """
-        Decoder: Reconstructs the input from the latent representation.
-
-        Args:
-            z (torch.Tensor): Sampled latent vector.
-
-        Returns:
-            torch.Tensor: Reconstructed tensor of the same shape as the input.
-        """
+        # z: [batch, n_seq*1000, latent_dim]
         batch_size = z.size(0)
+        x = self.latent_to_decoder(z)  # [batch, n_seq*1000, n_channels]
+        x = x.permute(0, 2, 1)  # [batch, n_channels, n_seq*1000]
 
-        # Project latent space to decoder input size
-        x = self.latent_to_decoder(z)  # Shape: [batch_size, n_channels * n_seq * 1000]
-        x = x.view(batch_size, self.n_channels, self.n_seq * 1000)  # Reshape to match ConvTranspose1D input
-
-        x = self.decoder_conv1(x)  # Shape: [batch_size, 128, upsampled_seq_len]
-        x = self.decoder_bn1(x)  # Apply batch normalization
-        x = self.unpooling1(x)  # Shape: [batch_size, 128, further_upsampled_seq_len]
-        x = self.decoder_bn2(x)  # Apply batch normalization
-        x = self.decoder_conv2(x)  # Shape: [batch_size, 128, even_further_upsampled_seq_len]
-        x = self.decoder_bn3(x)  # Apply batch normalization
-        reconstructed = self.decoder_conv3(x)  # Shape: [batch_size, input_dim, original_seq_len]
-
+        x = self.decoder_conv1(x)
+        x = self.decoder_bn1(x)
+        x = self.unpooling1(x)
+        x = self.decoder_bn2(x)
+        x = self.decoder_conv2(x)
+        x = self.decoder_bn3(x)
+        reconstructed = self.decoder_conv3(x)
         return reconstructed
 
     def forward(self, x):
-        """
-        Forward pass through the Variational Encoder-Decoder.
-
-        Args:
-            x (torch.Tensor): Input tensor of shape [batch_size, input_dim, seq_len].
-
-        Returns:
-            Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-                - reconstructed: Reconstructed tensor of the same shape as the input.
-                - mu: Mean of the latent space.
-                - logvar: Log-variance of the latent space.
-        """
-        # Encode
         mu, logvar = self.encoder(x)
-
-        # Reparameterization trick to sample from latent space
         z = self.reparameterize(mu, logvar)
-
-        # Decode
         reconstructed = self.decoder(z)
         return reconstructed, mu, logvar
