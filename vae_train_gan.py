@@ -2,6 +2,22 @@ import torch
 from tqdm import tqdm
 from vae_utilities import save_checkpoint, save_sample_as_numpy
 from noise_fun import noise_fun
+import librosa
+
+
+def rythm_and_beats_cost(real_data,fake_data, rhythm_weight = 0.01, pitch_weight = 0.01):
+    # Rhythm Loss
+    real_beats = librosa.beat.beat_track(y=real_data)
+    fake_beats = librosa.beat.beat_track(y=fake_data)
+    rhythm_loss = torch.mean(torch.abs(real_beats - fake_beats))
+    
+    # Pitch Loss
+    real_pitch = librosa.core.piptrack(y=real_data)
+    fake_pitch = librosa.core.piptrack(y=fake_data)
+    pitch_loss = torch.mean(torch.abs(real_pitch - fake_pitch))
+    rythm_and_beats_loss =  rhythm_weight * rhythm_loss + pitch_weight * pitch_loss
+
+    return rythm_and_beats_loss
 
 
 def smoothing_loss(waveform, weight=1.0):
@@ -11,14 +27,14 @@ def smoothing_loss(waveform, weight=1.0):
 
 def smoothing_loss2(waveform, weight=1.0):
     # waveform: [batch, channels, seq_len]
-    diff1 = waveform[..., 1:] - waveform[..., :-1]
+    diff1 = waveform[..., 1:-1] - waveform[..., :-2]
     diff2 = waveform[..., 2:] - waveform[..., 1:-1]
     
     diff = diff2 - diff1
     return weight * diff.abs().mean()
 
 
-def stft_loss(fake, real, nchunks=100, n_fft=1024, hop_length=256, weight=1.0):
+def stft_loss(fake, real, nchunks=100, n_fft=1024 * 2, hop_length=256, weight=1.0): #1024
     """
     Computes cumulative STFT perceptual loss by splitting the sequence into nchunks.
     Args:
@@ -97,6 +113,8 @@ def compute_chunkwise_stats_loss(fake_music, real_music, num_chunks=1000, lambda
         lambda_max * local_max_loss
     )
 
+
+
 def train_vae_gan(generator,
                   discriminator,
                   g_optimizer, 
@@ -114,17 +132,19 @@ def train_vae_gan(generator,
                   smoothing=0.1,
                   save_after_nepochs=10,
                   freeze_encoder_decoder_after=10,
-                  beta=.0000502,
+                  beta=.0005, # beta  = .00005
                   lambda_fm = 20,
-                  smoothing_weight = 0.005,
-                  perceptual_weight = 0.25,
+                  smoothing_weight = 0.0075,
+                  perceptual_weight = 0.5,
+                  rhythm_weight = 0.01,
+                  pitch_weight = 0.01,
+                  lambda_div= 0.01,
                   d_steps_per_g_step=25):
     generator.to(device)
     discriminator.to(device)
 
     criterion_gan = torch.nn.BCEWithLogitsLoss()
     criterion_reconstruction = torch.nn.SmoothL1Loss()
-   # freeze_decoder_weights(generator)
 
     for epoch in range(start_epoch, epochs + 1):
         print(f"Epoch {epoch}/{epochs}")
@@ -143,7 +163,7 @@ def train_vae_gan(generator,
             target_norm, target_mean, target_std = data
             batch_size = target_norm.size(0)
             real_music = target_norm.to(device).float()
-            noisy_real_music = real_music + 0.0 * torch.randn_like(real_music)
+            noisy_real_music = real_music + 0.05 * torch.randn_like(real_music)
         
             # Prepare labels once per batch
             real_labels = torch.ones(batch_size, 1, device=device) * (1 - smoothing)
@@ -160,15 +180,19 @@ def train_vae_gan(generator,
                 real_features = discriminator.get_intermediate_features(real_music).detach()
                 fake_features = discriminator.get_intermediate_features(fake_music_g)
                 fm_loss = torch.mean((real_features.mean(0) - fake_features.mean(0))**2)
-                smooth_loss = smoothing_loss(fake_music_g, weight=smoothing_weight)
+                smooth_loss = smoothing_loss2(fake_music_g, weight=smoothing_weight)
                 perceptual_loss = stft_loss(fake_music_g, real_music, weight=perceptual_weight)
+                rb_loss = rythm_and_beats_cost(real_data,fake_data, rhythm_weight = rhythm_weight, pitch_weight = pitch_weight)
+                diversity_loss = -torch.mean(torch.var(fake_data, dim=0))  # Penalize batch similarity
                 
                 g_loss = (g_loss_reconstruction +
                           beta * g_loss_kl + 
                           g_loss_gan + g_loss_stats + 
                           lambda_fm * fm_loss +
                           smooth_loss +
-                          perceptual_loss) / accumulation_steps
+                          perceptual_loss + 
+                          rb_loss +
+                          diversity_loss) / accumulation_steps
 
                 g_loss.backward()
                 if (batch_idx + 1) % accumulation_steps == 0 or (batch_idx + 1) == len(train_loader):
@@ -177,15 +201,19 @@ def train_vae_gan(generator,
                 epoch_loss_g += g_loss.item() * accumulation_steps
                 epoch_g_loss_recon_sum += g_loss_reconstruction.item()
                 num_g_updates += 1
+
             # === Discriminator update (n times per generator update) ===
-            # Cache discriminator logits for real audio; doesn't change across D steps for the same batch
             for d_substep in range(d_steps_per_g_step):
-                # Recompute d_real_logits inside the loop for a fresh graph
                 d_real_logits = discriminator(noisy_real_music)
                 with torch.no_grad():
-                    noise = torch.randn(batch_size, n_channels,noise_dim ,device=device) #noise_fun(batch_size=batch_size, n_channels=n_channels, seq_len=noise_dim, device=device)
+                    noise = torch.randn(batch_size, n_channels, noise_dim, device=device)
                     fake_music, _, _ = generator(noise)
                 d_fake_logits = discriminator(fake_music)
+
+                # === Minibatch Discrimination Integration ===
+                # The discriminator automatically handles minibatch discrimination internally
+                # No need to modify the loss calculation here
+
                 d_loss_real = criterion_gan(d_real_logits, real_labels)
                 d_loss_fake = criterion_gan(d_fake_logits, fake_labels)
                 d_loss = (d_loss_real + d_loss_fake) / accumulation_steps
@@ -211,7 +239,6 @@ def train_vae_gan(generator,
             save_sample_as_numpy(generator, device, music_out_folder, epoch, noise_dim, n_channels=n_channels, num_samples=10, prefix='')
             save_checkpoint(generator, g_optimizer, epoch, checkpoint_folder, "generator")
             save_checkpoint(discriminator, d_optimizer, epoch, checkpoint_folder, "discriminator")
-   
 
 def pretrain_generator(generator,
                        train_loader,
