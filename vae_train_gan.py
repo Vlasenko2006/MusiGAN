@@ -248,8 +248,8 @@ def train_vae_gan(generator,
                 fm_loss = torch.mean((real_features.mean(0) - fake_features.mean(0))**2)
                 smooth_loss = smoothing_loss2(fake_music_g, weight=smoothing_weight)
                 perceptual_loss = stft_loss(fake_music_g, real_music, weight=perceptual_weight)
-                rb_loss = rythm_and_beats_cost(real_data,fake_data, rhythm_weight = rhythm_weight, pitch_weight = pitch_weight)
-                diversity_loss = -torch.mean(torch.var(fake_data, dim=0))  # Penalize batch similarity
+                rb_loss = rythm_and_beats_cost(real_music,fake_music_g, rhythm_weight = rhythm_weight, pitch_weight = pitch_weight)
+                diversity_loss = -torch.mean(torch.var(fake_music_g, dim=0))  # Penalize batch similarity
                 
                 g_loss = (g_loss_reconstruction +
                           beta * g_loss_kl + 
@@ -334,8 +334,8 @@ def pretrain_generator(generator,
             loss = criterion(fake_music, real_music)
             smooth_loss = smoothing_loss(fake_music, weight=0.01)
             perceptual_loss = stft_loss(fake_music, real_music, weight=0.01)
-            rb_loss = rythm_and_beats_cost(real_data,fake_data, rhythm_weight = 0.01, pitch_weight =0.01)
-            diversity_loss = -torch.mean(torch.var(fake_data, dim=0))  # Penalize batch similarity
+            rb_loss = rythm_and_beats_cost(real_music,fake_music, rhythm_weight = 0.01, pitch_weight =0.01)
+            diversity_loss = -torch.mean(torch.var(fake_music, dim=0))  # Penalize batch similarity
             loss += smooth_loss + rb_loss +perceptual_loss + 0.01 * diversity_loss
             optimizer.zero_grad()
             loss.backward()
