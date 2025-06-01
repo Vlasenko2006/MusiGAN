@@ -8,14 +8,15 @@ from torchaudio.transforms import Spectrogram, AmplitudeToDB
 
 
 
-def compute_beats(waveform, sample_rate):
+def compute_beats(waveform, sample_rate, max_beats=100):
     """
     Compute the beat positions for a waveform using torchaudio.
     Args:
         waveform: Tensor of shape [batch, channels, seq_len]
         sample_rate: Sampling rate of the waveform
+        max_beats: Maximum number of beats to return per batch sample (for padding)
     Returns:
-        beats: Tensor of shape [batch, num_beats], representing beat positions in seconds
+        beats: Tensor of shape [batch, max_beats], representing beat positions in seconds
     """
     batch_size, channels, seq_len = waveform.shape
     # Convert to mono if stereo
@@ -29,10 +30,19 @@ def compute_beats(waveform, sample_rate):
     onset_strength = (onset_strength - onset_strength.min()) / (onset_strength.max() + 1e-8)
     # Detect peaks in onset strength as beats
     peaks = (onset_strength[:, 1:] > onset_strength[:, :-1]) & (onset_strength[:, 1:] > 0.5)
-    if not peaks.any():  # Check if no peaks were detected
-        return torch.zeros((batch_size, 1), device=waveform.device)  # Default placeholder
-    beats = torch.nonzero(peaks, as_tuple=False)[:, 1] * (512 / sample_rate)  # Scale to time in seconds
-    return beats
+    beats = []
+    for b in range(batch_size):
+        beat_positions = torch.nonzero(peaks[b], as_tuple=False)[:, 0] * (512 / sample_rate)  # Scale to time in seconds
+        if beat_positions.numel() == 0:  # If no beats detected, return zeros
+            beat_positions = torch.zeros((1,), device=waveform.device)
+        # Pad or truncate to max_beats
+        if beat_positions.size(0) < max_beats:
+            beat_positions = torch.cat([beat_positions, torch.zeros(max_beats - beat_positions.size(0), device=waveform.device)])
+        else:
+            beat_positions = beat_positions[:max_beats]
+        beats.append(beat_positions)
+    return torch.stack(beats)  # [batch, max_beats]
+
 
 def rythm_and_beats_cost(real_data, fake_data, sample_rate=12000, rhythm_weight=0.01, pitch_weight=0.01):
     """
@@ -50,30 +60,23 @@ def rythm_and_beats_cost(real_data, fake_data, sample_rate=12000, rhythm_weight=
     real_beats = compute_beats(real_data, sample_rate)
     fake_beats = compute_beats(fake_data, sample_rate)
 
-    # Handle empty beat tensors
-    if real_beats.numel() == 0 or fake_beats.numel() == 0:
-        print("Warning: Empty beats detected. Skipping rhythm loss.")
-        rhythm_loss = torch.tensor(0.0, device=real_data.device)  # Default to 0
-    else:
-        # Normalize beats before calculating loss
-        real_beats_norm = (real_beats - real_beats.mean()) / (real_beats.std() + 1e-8)
-        fake_beats_norm = (fake_beats - fake_beats.mean()) / (fake_beats.std() + 1e-8)
-        rhythm_loss = torch.mean(torch.abs(real_beats_norm - fake_beats_norm))
-    
+    # Normalize beats before calculating loss
+    real_beats_norm = (real_beats - real_beats.mean(dim=1, keepdim=True)) / (real_beats.std(dim=1, keepdim=True) + 1e-8)
+    fake_beats_norm = (fake_beats - fake_beats.mean(dim=1, keepdim=True)) / (fake_beats.std(dim=1, keepdim=True) + 1e-8)
+
+    # Mask padded values (assume zeros are used for padding)
+    mask = (real_beats != 0) & (fake_beats != 0)
+    rhythm_loss = torch.mean(torch.abs(real_beats_norm[mask] - fake_beats_norm[mask]))
+
     # Compute pitch
     real_pitch = compute_pitch(real_data, sample_rate)
     fake_pitch = compute_pitch(fake_data, sample_rate)
 
-    # Handle empty pitch tensors (though unlikely)
-    if real_pitch.numel() == 0 or fake_pitch.numel() == 0:
-        print("Warning: Empty pitch detected. Skipping pitch loss.")
-        pitch_loss = torch.tensor(0.0, device=real_data.device)  # Default to 0
-    else:
-        # Normalize pitch before calculating loss
-        real_pitch_norm = (real_pitch - real_pitch.mean()) / (real_pitch.std() + 1e-8)
-        fake_pitch_norm = (fake_pitch - fake_pitch.mean()) / (fake_pitch.std() + 1e-8)
-        pitch_loss = torch.mean(torch.abs(real_pitch_norm - fake_pitch_norm))
-    
+    # Normalize pitch before calculating loss
+    real_pitch_norm = (real_pitch - real_pitch.mean()) / (real_pitch.std() + 1e-8)
+    fake_pitch_norm = (fake_pitch - fake_pitch.mean()) / (fake_pitch.std() + 1e-8)
+    pitch_loss = torch.mean(torch.abs(real_pitch_norm - fake_pitch_norm))
+
     # Combine losses
     rythm_and_beats_loss = rhythm_weight * rhythm_loss + pitch_weight * pitch_loss
     return rythm_and_beats_loss
@@ -247,14 +250,15 @@ def train_vae_gan(generator,
                   smoothing=0.1,
                   save_after_nepochs=10,
                   freeze_encoder_decoder_after=10,
-                  beta=.0005 * 1.5, # beta  = .00005
+                  beta=.001 * 1.1, # beta  = .00005
                   lambda_fm = 20,
                   smoothing_weight = 0.0075,
                   perceptual_weight = 0.5,
-                  rhythm_weight = 0.01,
-                  pitch_weight = 0.01,
-                  lambda_div= 0.01,
-                  d_steps_per_g_step=25):
+                  rhythm_weight = 0.0001, #0.005
+                  pitch_weight = 0.0001,
+                  lambda_div = 0.001, #0.01
+                  lambda_rec = 2,
+                  d_steps_per_g_step=1):
     generator.to(device)
     discriminator.to(device)
 
@@ -285,7 +289,7 @@ def train_vae_gan(generator,
             fake_labels = torch.zeros(batch_size, 1, device=device)
         
             # === Generator update (twice per batch) ===
-            for _ in range(2):
+            for _ in range(3):
                 noise_g = torch.randn(batch_size, n_channels, noise_dim, device=device)
                 fake_music_g, mu_g, logvar_g = generator(noise_g)
                 g_loss_reconstruction = criterion_reconstruction(fake_music_g, real_music)
@@ -300,7 +304,7 @@ def train_vae_gan(generator,
                 rb_loss = rythm_and_beats_cost(real_music,fake_music_g, sample_rate = sample_rate, rhythm_weight = rhythm_weight, pitch_weight = pitch_weight)
                 diversity_loss = -torch.mean(torch.var(fake_music_g, dim=0))  # Penalize batch similarity
                 
-                g_loss = (g_loss_reconstruction +
+                g_loss = (lambda_rec * g_loss_reconstruction +
                           beta * g_loss_kl + 
                           g_loss_gan + g_loss_stats + 
                           lambda_fm * fm_loss +
@@ -382,11 +386,11 @@ def pretrain_generator(generator,
             fake_music, _, _ = generator(noise)
 
             loss = criterion(fake_music, real_music)
-            smooth_loss = smoothing_loss(fake_music, weight=0.01)
-            perceptual_loss = stft_loss(fake_music, real_music, weight=0.01)
-            rb_loss = rythm_and_beats_cost(real_music,fake_music, sample_rate = sample_rate, rhythm_weight = 0.01, pitch_weight =0.01)
+            smooth_loss = smoothing_loss(fake_music, weight=0.001)
+            perceptual_loss = stft_loss(fake_music, real_music, weight=0.001)
+            rb_loss = rythm_and_beats_cost(real_music,fake_music, sample_rate = sample_rate, rhythm_weight = 0.001, pitch_weight =0.001)
             diversity_loss = -torch.mean(torch.var(fake_music, dim=0))  # Penalize batch similarity
-            loss += smooth_loss + rb_loss +perceptual_loss + 0.01 * diversity_loss
+            loss += smooth_loss + rb_loss +perceptual_loss + 0.0001 * diversity_loss
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
