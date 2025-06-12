@@ -339,6 +339,6 @@ def train_vae_gan(generator,
             print(" ==== saving music samples and models ==== ")
             target_mean = target_mean.to(fake_music_g.device)
             target_std = target_std.to(fake_music_g.device)
-            save_sample_as_numpy(generator, device, music_out_folder, epoch, noise_dim, n_channels=n_channels, num_samples=10, prefix='')
+            #save_sample_as_numpy(generator, device, music_out_folder, epoch, noise_dim, n_channels=n_channels, num_samples=10, prefix='')
             save_checkpoint(generator, g_optimizer, epoch, checkpoint_folder, "generator")
             save_checkpoint(discriminator, d_optimizer, epoch, checkpoint_folder, "discriminator")
