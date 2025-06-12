@@ -11,7 +11,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from vae_model import VariationalAttentionModel, AudioDataset
+from vae_model_spectral import VariationalAttentionModel, AudioDataset
 from discriminator import Discriminator  # Import the discriminator model
 from vae_train_gan import train_vae_gan, pretrain_generator, pretrain_discriminator  # Updated GAN training functions
 from utilities import load_checkpoint, save_checkpoint
