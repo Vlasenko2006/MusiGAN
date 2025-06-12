@@ -23,8 +23,8 @@ def split_signal_frequency_bands(signals, fs=12000):
         "Super_Ultra_Low":   (0,    200),
         "Ultra_Low":   (200,    500),
         "Low":         (500,  1000),
-        "Low_Medium":  (1000, 1500),
-        "Medium":      (1500, 2000),
+        "Low_Middle":  (1000, 1500),
+        "Middle":      (1500, 2000),
         "High":        (2000, 3000),
         "Ultra_High":  (3000, 6000)
     }
@@ -54,33 +54,49 @@ def split_signal_frequency_bands(signals, fs=12000):
     return band_signals
 
 
-def merge_band_signals(band_signals, fs=12000):
-    """
-    Takes a dict of band signals (each in time domain), applies FFT to each, sums their FFTs,
-    then does an inverse FFT to reconstruct the merged time-domain signal.
+import torch
 
+def merge_band_signals(fband_signals, fs=12000):
+    """
     Args:
-        band_signals: dict of torch.Tensor, each shape [batch_size, n_channels, seq_length]
-        fs: int, sample rate (not strictly needed unless you want to check freq alignment)
+        fband_signals: dict[str, torch.Tensor], each value shape [batch, channels, freq_bins] (FFT domain)
+        fs: int, sample rate in Hz
 
     Returns:
-        signal: torch.Tensor, merged signal in time domain, shape [batch_size, n_channels, seq_length]
+        merged_signal: torch.Tensor, [batch, channels, seq_length] (time domain)
     """
-    bands = list(band_signals.keys())
-    ref_signal = band_signals[bands[0]]
-    batch_size, n_channels, seq_length = ref_signal.shape
-    device = ref_signal.device
-    dtype = ref_signal.dtype
+    # Define the frequency bands (Hz)
+    bands = {
+        "Super_Ultra_Low": (0, 200),
+        "Ultra_Low": (200, 500),
+        "Low": (500, 1000),
+        "Low_Middle": (1000, 1500),
+        "Middle": (1500, 2000),
+        "High": (2000, 3000),
+        "Ultra_High": (3000, 6000)
+    }
+
+    # Get reference dimensions
+    ref_band = next(iter(fband_signals.values()))
+    batch_size, n_channels, n_freq_bins = ref_band.shape
+    seq_length = (n_freq_bins - 1) * 2
+    device = ref_band.device
+    dtype = ref_band.dtype
+
+    # Compute bin frequencies
+    freqs = torch.fft.rfftfreq(seq_length, d=1.0/fs).to(device=device)
 
     # Initialize sum of FFTs
-    summed_fft = torch.zeros((batch_size, n_channels, seq_length // 2 + 1), dtype=torch.complex64 if dtype==torch.float32 else torch.complex128, device=device)
+    summed_fft = torch.zeros((batch_size, n_channels, n_freq_bins), dtype=ref_band.dtype, device=device)
 
-    # FFT for each band and sum
-    for band in bands:
-        fft_vals = torch.fft.rfft(band_signals[band], n=seq_length, dim=-1)
-        summed_fft = summed_fft + fft_vals
+    for band_name, (f_min, f_max) in bands.items():
+        band_fft = fband_signals[band_name]
+        # Make a mask for valid frequencies
+        mask = (freqs >= f_min) & (freqs < f_max)
+        mask = mask.reshape((1, 1, -1))
+        band_fft_clamped = torch.where(mask, band_fft, torch.zeros_like(band_fft))
+        summed_fft = summed_fft + band_fft_clamped
 
-    # Inverse FFT to get the merged signal
+    # Inverse FFT to get merged signal
     merged_signal = torch.fft.irfft(summed_fft, n=seq_length, dim=-1)
-
     return merged_signal
