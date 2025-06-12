@@ -1,8 +1,48 @@
 import torch
 import torch.nn as nn
+from torch.utils.data import Dataset
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from vae_encoder_decoder import VariationalEncoderDecoder
 from split_signal_frequency_bands import merge_band_signals
+
+
+FREEZE_ENCODER_DECODER_AFTER = 10
+
+sf = 4
+do = 0.
+
+# === Normalization Helpers ===
+def normalize_waveform(waveform):
+    mean = waveform.mean(dim=-1, keepdim=True)
+    std = waveform.std(dim=-1, keepdim=True) + 1e-8
+    return (waveform - mean) / std, mean, std
+
+def denormalize_waveform(waveform, mean, std):
+    return waveform * std + mean
+
+# Dataset class: only yields normalized real stereo music + stats for denormalization
+class AudioDataset(Dataset):
+    """
+    Yields:
+      target_norm: [2, seq_len] - normalized stereo audio
+      target_mean: [2, 1] - mean per channel
+      target_std: [2, 1] - std per channel
+    For GAN use: input is generated noise, not loaded from dataset.
+    """
+    def __init__(self, data):
+        """
+        data: numpy array of shape (N, 2, seq_len)
+        """
+        self.data = data
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        target = self.data[idx]  # shape: (2, seq_len)
+        target_tensor = torch.tensor(target, dtype=torch.float32)
+        target_norm, target_mean, target_std = normalize_waveform(target_tensor)
+        return target_norm, target_mean, target_std
 
 class VariationalAttentionModel(nn.Module):
     def __init__(
