@@ -71,5 +71,11 @@ class VariationalAttentionModel(nn.Module):
         transformer_out = self.transformer(z)  # [latent_seq_len, batch, latent_dim]
         #print("transformer_out.shape", transformer_out.shape)
         transformer_out = transformer_out.permute(1, 0, 2)  # [batch, latent_seq_len, latent_dim]
-        reconstructed = self.variational_encoder_decoder.decoder(transformer_out)  # (decoder must accept sequence!)
-        return reconstructed, mu, logvar
+        reconstructed_Super_Ultra_Low = self.variational_encoder_decoder.decoder(transformer_out)  # (decoder must accept sequence!)
+        reconstructed_Ultra_Low = self.variational_encoder_decoder.decoder(transformer_out) 
+        reconstructed_Low = self.variational_encoder_decoder.decoder(transformer_out)  
+        reconstructed_Low_Middle = self.variational_encoder_decoder.decoder(transformer_out) 
+        reconstructed_Middle = self.variational_encoder_decoder.decoder(transformer_out)
+        reconstructed_High = self.variational_encoder_decoder.decoder(transformer_out)  
+        reconstructed_Ultra_High = self.variational_encoder_decoder.decoder(transformer_out) 
+        return reconstructed_Super_Ultra_Low, reconstructed_Ultra_Low, reconstructed_Low_Middle, reconstructed_Low, reconstructed_Middle, reconstructed_High, reconstructed_Ultra_High,mu, logvar

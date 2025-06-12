@@ -54,8 +54,6 @@ def split_signal_frequency_bands(signals, fs=12000):
     return band_signals
 
 
-import torch
-
 def merge_band_signals(fband_signals, fs=12000):
     """
     Args:
