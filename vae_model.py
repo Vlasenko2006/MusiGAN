@@ -3,6 +3,7 @@ import torch.nn as nn
 from torch.utils.data import Dataset
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from vae_encoder_decoder import VariationalEncoderDecoder
+from split_signal_frequency_bands import merge_band_signals
 
 FREEZE_ENCODER_DECODER_AFTER = 10
 
@@ -70,12 +71,40 @@ class VariationalAttentionModel(nn.Module):
         #print("z.shape", z.shape)
         transformer_out = self.transformer(z)  # [latent_seq_len, batch, latent_dim]
         #print("transformer_out.shape", transformer_out.shape)
-        transformer_out = transformer_out.permute(1, 0, 2)  # [batch, latent_seq_len, latent_dim]
-        reconstructed_Super_Ultra_Low = self.variational_encoder_decoder.decoder(transformer_out)  # (decoder must accept sequence!)
-        reconstructed_Ultra_Low = self.variational_encoder_decoder.decoder(transformer_out) 
-        reconstructed_Low = self.variational_encoder_decoder.decoder(transformer_out)  
-        reconstructed_Low_Middle = self.variational_encoder_decoder.decoder(transformer_out) 
+     # Reconstruct all bands separately (here, all bands use the same decoder & latent, adapt as needed)
+        reconstructed_Super_Ultra_Low = self.variational_encoder_decoder.decoder(transformer_out)
+        reconstructed_Ultra_Low = self.variational_encoder_decoder.decoder(transformer_out)
+        reconstructed_Low = self.variational_encoder_decoder.decoder(transformer_out)
+        reconstructed_Low_Middle = self.variational_encoder_decoder.decoder(transformer_out)
         reconstructed_Middle = self.variational_encoder_decoder.decoder(transformer_out)
-        reconstructed_High = self.variational_encoder_decoder.decoder(transformer_out)  
-        reconstructed_Ultra_High = self.variational_encoder_decoder.decoder(transformer_out) 
-        return reconstructed_Super_Ultra_Low, reconstructed_Ultra_Low, reconstructed_Low_Middle, reconstructed_Low, reconstructed_Middle, reconstructed_High, reconstructed_Ultra_High,mu, logvar
+        reconstructed_High = self.variational_encoder_decoder.decoder(transformer_out)
+        reconstructed_Ultra_High = self.variational_encoder_decoder.decoder(transformer_out)
+    
+        # Prepare band dictionary
+        band_names = [
+            "Super_Ultra_Low", "Ultra_Low", "Low", "Low_Middle", "Middle", "High", "Ultra_High"
+        ]
+        reconstructed_bands = [
+            reconstructed_Super_Ultra_Low, reconstructed_Ultra_Low, reconstructed_Low,
+            reconstructed_Low_Middle, reconstructed_Middle, reconstructed_High, reconstructed_Ultra_High
+        ]
+        fband_signals = {}
+    
+        # Compute frequency-domain representation for each reconstructed band
+        for name, signal in zip(band_names, reconstructed_bands):
+            # rfft along last dimension (assumes [batch, channels, seq_len])
+            fband_signals[name] = torch.fft.rfft(signal, n=signal.shape[-1], dim=-1)
+    
+        # Merge frequency bands to produce the final fake_music_g signal
+        fake_music_g = merge_band_signals(fband_signals, fs=12000)
+    
+        return (
+            reconstructed_Super_Ultra_Low,
+            reconstructed_Ultra_Low,
+            reconstructed_Low_Middle,
+            reconstructed_Low,
+            reconstructed_Middle,
+            reconstructed_High,
+            reconstructed_Ultra_High,
+            mu, logvar, fake_music_g
+        )

@@ -158,7 +158,7 @@ def normalize_loss_weights(generator,
         average_loss_values = {loss_name: max(value / batch_count, 1e-3) for loss_name, value in loss_values.items()}
 
         # Normalize weights so all initial costs are 1
-        loss_weights = {loss_name: 1.0 / max(abs(value), 1e-3) for loss_name, value in average_loss_values.items()}
+        loss_weights = {loss_name: .10 / max(abs(value), 1e-3) for loss_name, value in average_loss_values.items()}
 
         # Check if YAML file exists
         if yaml_filepath and not os.path.exists(yaml_filepath):

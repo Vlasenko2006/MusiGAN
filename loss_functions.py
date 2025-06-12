@@ -8,6 +8,7 @@ Created on Fri Jun  6 10:23:42 2025
 
 
 import torch
+import torch.nn as nn
 import scipy.signal
 from torchaudio.transforms import Spectrogram, AmplitudeToDB, MelSpectrogram
 
@@ -584,3 +585,99 @@ def penalize_peaks_loss(signals, fs=12000, music_band=(0, 8000), peak_height_rat
 
     return penalty#, outliers
 
+
+
+def bandwise_generator_loss(fake_band_signals, real_band_signals, fband_signals, real_music, 
+                            criterion_recon=None, criterion_gan=None, discriminator=None, real_labels=None, loss_weights=None):
+    """
+    Computes generator loss for bandwise outputs.
+    Args:
+        fake_band_signals: dict of time-domain tensors, keys are band names, values shape [B, C, L]
+        real_band_signals: dict of time-domain tensors, same structure as fake_band_signals
+        fband_signals: dict of frequency-domain tensors, keys are band names, values shape [B, C, F]
+        real_music: torch.Tensor, [B, C, L] (for full waveform GAN loss)
+        criterion_recon: loss function for reconstruction (default: nn.SmoothL1Loss())
+        criterion_gan: GAN loss criterion (default: nn.BCEWithLogitsLoss())
+        discriminator: discriminative model, must return logits for GAN loss
+        real_labels: torch.Tensor, shape [B, 1]
+        loss_weights: dict of weights for each loss term (optional)
+    Returns:
+        total_g_loss: scalar tensor (requires grad)
+        loss_terms: dict of individual loss terms (for logging)
+    """
+    if criterion_recon is None:
+        criterion_recon = nn.SmoothL1Loss()
+    if criterion_gan is None:
+        criterion_gan = nn.BCEWithLogitsLoss()
+
+    total_g_loss = 0.0
+    loss_terms = {}
+
+    # 1. Bandwise reconstruction loss (sum over bands)
+    recon_loss = 0.0
+    for band in fake_band_signals:
+        recon_loss += criterion_recon(fake_band_signals[band], real_band_signals[band])
+    if loss_weights is not None and "band_recon" in loss_weights:
+        recon_loss = loss_weights["band_recon"] * recon_loss
+    loss_terms["band_recon"] = recon_loss
+    total_g_loss += recon_loss
+
+    # 2. Bandwise spectral (frequency domain) loss (optional, e.g., L1/L2 on F-domain)
+    spectral_loss = 0.0
+    for band in fband_signals:
+        spectral_loss += torch.nn.functional.l1_loss(fband_signals[band], torch.fft.rfft(real_band_signals[band], n=real_band_signals[band].shape[-1], dim=-1))
+    if loss_weights is not None and "band_spectral" in loss_weights:
+        spectral_loss = loss_weights["band_spectral"] * spectral_loss
+    loss_terms["band_spectral"] = spectral_loss
+    total_g_loss += spectral_loss
+
+    # 3. Full waveform adversarial loss (if using a full waveform discriminator)
+    if discriminator is not None and real_labels is not None:
+        merged_fake = sum(fake_band_signals.values())
+        g_gan_loss = criterion_gan(discriminator(merged_fake), real_labels)
+        if loss_weights is not None and "gan" in loss_weights:
+            g_gan_loss = loss_weights["gan"] * g_gan_loss
+        loss_terms["gan"] = g_gan_loss
+        total_g_loss += g_gan_loss
+
+    return total_g_loss, loss_terms
+
+def bandwise_discriminator_loss(fake_band_signals, real_band_signals, discriminator, criterion_gan=None, real_labels=None, fake_labels=None, loss_weights=None):
+    """
+    Computes discriminator loss for bandwise outputs.
+    Args:
+        fake_band_signals: dict of time-domain tensors, keys are band names, values shape [B, C, L]
+        real_band_signals: dict of time-domain tensors, same structure as fake_band_signals
+        discriminator: discriminative model, must return logits for GAN loss
+        criterion_gan: GAN loss criterion (default: nn.BCEWithLogitsLoss())
+        real_labels: torch.Tensor, shape [B, 1]
+        fake_labels: torch.Tensor, shape [B, 1]
+        loss_weights: dict of weights for each loss term (optional)
+    Returns:
+        total_d_loss: scalar tensor (requires grad)
+        loss_terms: dict of individual loss terms (for logging)
+    """
+    if criterion_gan is None:
+        criterion_gan = nn.BCEWithLogitsLoss()
+
+    total_d_loss = 0.0
+    loss_terms = {}
+
+    # Full waveform discriminator: merge bands (sum or other merge, here sum)
+    merged_real = sum(real_band_signals.values())
+    merged_fake = sum(fake_band_signals.values())
+
+    d_real_logits = discriminator(merged_real)
+    d_fake_logits = discriminator(merged_fake)
+
+    d_loss_real = criterion_gan(d_real_logits, real_labels)
+    d_loss_fake = criterion_gan(d_fake_logits, fake_labels)
+    d_loss = d_loss_real + d_loss_fake
+
+    if loss_weights is not None and "gan" in loss_weights:
+        d_loss = loss_weights["gan"] * d_loss
+
+    loss_terms["gan"] = d_loss
+    total_d_loss += d_loss
+
+    return total_d_loss, loss_terms
