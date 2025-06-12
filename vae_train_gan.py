@@ -256,7 +256,7 @@ def train_vae_gan(generator,
                     mu_g, logvar_g, fake_music) = outputs
 
                     band_names = [
-                        "Super_Ultra_Low", "Ultra_Low", "Low_Middle", "Low", "Middle", "High", "Ultra_High"
+                        "Super_Ultra_Low", "Ultra_Low", "Low_Middle", "Low", "Middle", "High_Hiddle", "High", "Ultra_High"
                     ]
                     reconstructed_bands = [
                         reconstructed_Super_Ultra_Low, reconstructed_Ultra_Low, reconstructed_Low_Middle,

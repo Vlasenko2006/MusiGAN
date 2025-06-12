@@ -14,11 +14,12 @@ def split_signal_frequency_bands(signals, fs=12000):
     bands = {
         "Super_Ultra_Low": (0, 200),
         "Ultra_Low": (200, 500),
-        "Low": (500, 1000),
-        "Low_Middle": (1000, 1500),
-        "Middle": (1500, 2000),
-        "High": (2000, 3000),
-        "Ultra_High": (3000, 6000)
+        "Low": (500, 900),
+        "Low_Middle": (900, 1400),
+        "Middle": (1400, 2000),
+        "High_Hiddle":(2000, 2700),
+        "High": (2700, 3700),
+        "Ultra_High": (3700, 6000)
     }
     seq_length = signals.shape[-1]
     device = signals.device
@@ -52,11 +53,12 @@ def merge_band_signals(fband_signals, fs=12000):
     bands = {
         "Super_Ultra_Low": (0, 200),
         "Ultra_Low": (200, 500),
-        "Low": (500, 1000),
-        "Low_Middle": (1000, 1500),
-        "Middle": (1500, 2000),
-        "High": (2000, 3000),
-        "Ultra_High": (3000, 6000)
+        "Low": (500, 900),
+        "Low_Middle": (900, 1400),
+        "Middle": (1400, 2000),
+        "High_Hiddle":(2000, 2700),
+        "High": (2700, 3700),
+        "Ultra_High": (3700, 6000)
     }
 
     # Get reference dimensions
