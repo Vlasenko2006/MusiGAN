@@ -2,7 +2,7 @@ import torch
 import yaml
 import os
 from tqdm import tqdm
-from vae_utilities import save_checkpoint, save_sample_as_numpy
+from vae_utilities import save_checkpoint
 from loss_functions import (
     spectral_regularization_loss, combined_perceptual_loss, rhythm_enforcement_loss,
     rhythm_detection_penalty, silence_loss, beat_timing_loss, compute_beats, rythm_and_beats_loss, compute_pitch,
@@ -11,7 +11,7 @@ from loss_functions import (
     penalize_peaks_loss, bandwise_generator_loss, bandwise_discriminator_loss
 )
 from split_signal_frequency_bands import split_signal_frequency_bands
-
+from harmony_loss import harmony_loss
 def normalize_loss_weights(
     generator,
     discriminator,
@@ -67,17 +67,23 @@ def normalize_loss_weights(
         "silence_cost": 0.0,
         "smoothing_cost": 0.0,
         "smoothing_cost2": 0.0,
-        "enforce_rhythm_cost": 0.0,
+        "rhythm_cost": 0.0,
         "alternation_cost_d": 0.0,
         "beat_duration_cost_d": 0.0,
         "cb_percept_cost_d": 0.0,
         "freq_outlier_cost_d": 0.0,
         "silence_cost_d": 0.0,
+        "detection_cost_d": 0.0,
+        "cp_cost_d": 0.0,
+        "beat_timing_cost_d": 0.0,
+        "harmony_cost": 0,
         # Bandwise losses
-        "band_recon": 0.0,
-        "band_spectral": 0.0,
-        "band_gan": 0.0,
-        "band_discr": 0.0,
+        "band_recon": 1.0,
+        "band_spectral": 1.0,
+        "band_gan": 1.0,
+        "band_discr": 1.0,
+        "band_gen_total": 1,
+        "band_d_total": 1,
     }
 
     loss_weights = loss_values.copy()
@@ -116,17 +122,21 @@ def normalize_loss_weights(
 
                 # Forward pass using new generator model API (bandwise)
                 (
-                    reconstructed_Super_Ultra_Low, reconstructed_Ultra_Low, reconstructed_Low_Middle,
-                    reconstructed_Low, reconstructed_Middle, reconstructed_High, reconstructed_Ultra_High,
+                    reconstructed_Super_Ultra_Low, reconstructed_Ultra_Low, 
+                    reconstructed_Low, reconstructed_Low_Middle, 
+                    reconstructed_Middle, reconstructed_High_Middle, 
+                    reconstructed_High, reconstructed_Ultra_High,
                     mu_g, logvar_g, fake_music_g
                 ) = generator(noise_g)
 
                 band_names = [
-                    "Super_Ultra_Low", "Ultra_Low", "Low_Middle", "Low", "Middle", "High_Hiddle", "High", "Ultra_High"
+                    "Super_Ultra_Low", "Ultra_Low", "Low", "Low_Middle", "Middle", "High_Middle", "High", "Ultra_High"
                 ]
                 reconstructed_bands = [
-                    reconstructed_Super_Ultra_Low, reconstructed_Ultra_Low, reconstructed_Low_Middle,
-                    reconstructed_Low, reconstructed_Middle, reconstructed_High, reconstructed_Ultra_High
+                    reconstructed_Super_Ultra_Low, reconstructed_Ultra_Low, 
+                    reconstructed_Low, reconstructed_Low_Middle,
+                    reconstructed_Middle, reconstructed_High_Middle, 
+                    reconstructed_High, reconstructed_Ultra_High
                 ]
                 fake_band_signals = {k: v for k, v in zip(band_names, reconstructed_bands)}
                 fband_signals = {k: torch.fft.rfft(v, n=v.shape[-1], dim=-1) for k, v in fake_band_signals.items()}
@@ -170,6 +180,18 @@ def normalize_loss_weights(
                     fake_music_g, beats,
                     large_duration_range=large_duration_range, short_duration_range=short_duration_range
                 )
+                detection_cost_d = rhythm_detection_penalty(beats, 
+                                                            compute_beats(fake_music_g, sample_rate), 
+                                                            large_duration_range=large_duration_range, 
+                                                            short_duration_range=short_duration_range)
+                
+                cp_cost_d = combined_perceptual_loss(fake_music_g, noisy_real_music, sample_rate, scales=[512, 1024, 2048], 
+                                                                                mel_weight=comb_percept_lambda,
+                                                                                complex_weight=comb_percept_lambda,
+                                                                                multi_scale_weight=comb_percept_lambda)
+                fake_beats = compute_beats(fake_music_g, sample_rate)
+                beat_timing_cost_d =  beat_timing_loss(beats, fake_beats)
+                
                 penalize_peaks_cost = penalize_peaks_loss(
                     fake_music_g, fs=sample_rate, music_band=(200, 8000), peak_height_ratio=peak_height_ratio
                 )
@@ -183,10 +205,23 @@ def normalize_loss_weights(
                     fake_band_signals, real_band_signals, discriminator, criterion_gan, real_labels, fake_labels, loss_weights=None
                 )
 
+                harmony_cost = harmony_loss(
+                                fake_music_g, 
+                                sample_rate, 
+                                pitch_weight=1.0, 
+                                interval_weight=0.5, 
+                                chord_weight=2.0, 
+                                texture_weight=1.0
+                            )
+
+                
                 # Track loss values (scalar reductions)
                 for key, value in locals().items():
                     if key in loss_values:
-                        loss_values[key] += value.item()
+                        if isinstance(value, torch.Tensor):  # Check if value is a PyTorch tensor
+                            loss_values[key] += value.item()
+                        elif isinstance(value, (int, float)):  # Check if value is a float or int
+                            loss_values[key] += value
                 # Track bandwise loss terms
                 for k, v in band_g_terms.items():
                     if k in loss_values:
@@ -208,5 +243,22 @@ def normalize_loss_weights(
             with open(yaml_filepath, "w") as yaml_file:
                 yaml.dump(loss_weights, yaml_file, default_flow_style=False)
             print(f"Created and saved weights to {yaml_filepath}")
+            
+            
+            
+            
+            
+            
+    loss_values["monotony_cost"] = loss_values["monotony_cost"] * 0.01
+    loss_values["silence_cost_d"] = loss_values["silence_cost"] * 0.0  # FIXME
+    loss_values["beat_timing_cost_d"] = loss_values["beat_timing_cost_d"] * 0.00000001
+    loss_weights["beat_duration_cost_d"]  = loss_weights["beat_duration_cost_d"] * .01
+    loss_weights["cb_percept_cost"] = loss_weights["cb_percept_cost"] * 0.001
+    loss_weights["alternation_cost_d"] = loss_weights["alternation_cost_d"] * 0.01
+    loss_weights["g_cost"]  = loss_weights["g_cost"] #* 10
+    
+
+
+
 
     return loss_weights

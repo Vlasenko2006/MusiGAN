@@ -6,6 +6,8 @@ from loss_functions import spectral_regularization_loss, combined_perceptual_los
     beat_duration_loss, alternation_loss, smoothing_loss, smoothing_loss2, stft_loss, freeze_decoder_weights, \
     denormalize_waveform, kl_divergence_loss, compute_chunkwise_stats_loss, spectral_outlier_discriminator_loss, \
     penalize_peaks_loss, bandwise_discriminator_loss, bandwise_generator_loss
+    
+from harmony_loss import harmony_loss
 
 from split_signal_frequency_bands import merge_band_signals, split_signal_frequency_bands
 from compute_weights import normalize_loss_weights
@@ -37,7 +39,7 @@ def train_vae_gan(generator,
                   outlier_threshold=10.0,
                   smoothing = 0,
                   peak_height_ratio=0.3,
-                  d_steps_per_g_step=7,
+                  d_steps_per_g_step=3,
                   yaml_filepath=None,
                   batch_size = 8):
     
@@ -61,7 +63,7 @@ def train_vae_gan(generator,
         "beat_duration_cost": [],  # New generator cost
         "silence_cost": [],        # New generator cost
         "alternation_cost": [],    # New generator cost
-        "enforce_rhythm_cost": [],
+        "rhythm_cost": [],
         "cb_percept_cost": [],
         "monotone_cost": [],
         "freq_outlier_cost": [],
@@ -69,12 +71,19 @@ def train_vae_gan(generator,
         "beat_duration_cost_d": [],  # New discriminator cost
         "silence_cost_d": [],        # New discriminator cost
         "alternation_cost_d": [],     # New discriminator cost
-        "enforce_rhythm_cost_d": [],
+        "rhythm_cost_d": [],
         "cb_percept_cost_d": [],
         "rythm_and_beats_cost": [],
         "freq_outlier_cost_d":[],
         "beat_timing_cost_d":[],
-        "penalize_peaks_cost":[]
+        "penalize_peaks_cost":[],
+        "band_recon": [],
+        "band_spectral": [],
+        "band_gan": [],
+        "band_discr": [],
+        "band_gen_total": [],
+        "band_d_total": [],
+        "harmony_cost": []
     }
 
     loss_weights = normalize_loss_weights(generator,
@@ -133,18 +142,23 @@ def train_vae_gan(generator,
             for _ in range(1):
                 # Forward pass through generator (using new bandwise-aware forward method)
                 outputs = generator(noise_g := torch.randn(batch_size, n_channels, noise_dim, device=device)) 
-                (reconstructed_Super_Ultra_Low, reconstructed_Ultra_Low, reconstructed_Low_Middle,
-                 reconstructed_Low, reconstructed_Middle, reconstructed_High, reconstructed_Ultra_High,
+                (reconstructed_Super_Ultra_Low, reconstructed_Ultra_Low, 
+                reconstructed_Low, reconstructed_Low_Middle, 
+                reconstructed_Middle, reconstructed_High_Middle, 
+                reconstructed_High, reconstructed_Ultra_High,
                  mu_g, logvar_g, fake_music_g) = outputs
 
                 # Construct fake_band_signals and fband_signals as in the improved forward method
                 band_names = [
-                    "Super_Ultra_Low", "Ultra_Low", "Low_Middle", "Low", "Middle", "High", "Ultra_High"
+                    "Super_Ultra_Low", "Ultra_Low", "Low", "Low_Middle", "Middle", "High_Middle", "High", "Ultra_High"
                 ]
                 reconstructed_bands = [
-                    reconstructed_Super_Ultra_Low, reconstructed_Ultra_Low, reconstructed_Low_Middle,
-                    reconstructed_Low, reconstructed_Middle, reconstructed_High, reconstructed_Ultra_High
+                    reconstructed_Super_Ultra_Low, reconstructed_Ultra_Low, 
+                    reconstructed_Low, reconstructed_Low_Middle,
+                    reconstructed_Middle, reconstructed_High_Middle, 
+                    reconstructed_High, reconstructed_Ultra_High
                 ]
+                
                 fake_band_signals = {k: v for k, v in zip(band_names, reconstructed_bands)}
                 fband_signals = {k: torch.fft.rfft(v, n=v.shape[-1], dim=-1) for k, v in fake_band_signals.items()}
 
@@ -159,7 +173,7 @@ def train_vae_gan(generator,
                 g_cost_stats = loss_weights["g_cost_stats"] * compute_chunkwise_stats_loss(fake_music_g, real_music)
                 fm_cost = loss_weights["fm_cost"] * torch.mean((real_features.mean(0) - fake_features.mean(0))**2)
                 smoothing_cost = loss_weights["smoothing_cost"] * smoothing_loss(fake_music_g)
-                smoothing_cost2 = loss_weights["smoothing_loss2"] * smoothing_loss2(fake_music_g) 
+                smoothing_cost2 = loss_weights["smoothing_cost2"] * smoothing_loss2(fake_music_g) 
                 perceptual_cost = loss_weights["perceptual_cost"] * stft_loss(fake_music_g, real_music)
                 rythm_and_beats_cost = loss_weights["rythm_and_beats_cost"] * rythm_and_beats_loss(real_music, 
                                                                                                    fake_music_g,
@@ -181,7 +195,7 @@ def train_vae_gan(generator,
                                                      complex_weight=comb_percept_lambda,
                                                      multi_scale_weight=comb_percept_lambda
                                                      )
-                rhythm_cost = loss_weights["enforce_rhythm_cost"] * rhythm_enforcement_loss(
+                rhythm_cost = loss_weights["rhythm_cost"] * rhythm_enforcement_loss(
                                fake_music_g, beats, large_duration_range=large_duration_range, short_duration_range=short_duration_range
                                )
                 penalize_peaks_cost = loss_weights["penalize_peaks_cost"] * penalize_peaks_loss(fake_music_g, fs=sample_rate, music_band=(200, 8000), peak_height_ratio=peak_height_ratio)
@@ -191,30 +205,39 @@ def train_vae_gan(generator,
                     fake_band_signals, real_band_signals, fband_signals, real_music, 
                     criterion_reconstruction, criterion_gan, discriminator, real_labels, loss_weights
                 )
+                harmony_cost = loss_weights["harmony_cost"] * harmony_loss(
+                                fake_music_g, 
+                                sample_rate, 
+                                pitch_weight=1.0, 
+                                interval_weight=0.5, 
+                                chord_weight=2.0, 
+                                texture_weight=1.0
+                            )
 
                 # Print g_terms for this batch
-                print(f"Batch {batch_idx} (Generator) bandwise loss terms: {g_terms}")
+              #  print(f"Batch {batch_idx} (Generator) bandwise loss terms: {g_terms}")
 
                 # Combine all losses
                 g_loss = (g_cost_reconstruction +
-                           g_cost_kl + 
+                           10 * g_cost_kl + # * 1
                            g_cost + 
-                         #  g_cost_stats + 
-                           fm_cost +
-                         #  smoothing_cost +
-                         #  smoothing_cost2 +
-                         #  perceptual_cost + 
+                           g_cost_stats + 
+                           0.25 * fm_cost + # * 0.25
+                           smoothing_cost +
+                           smoothing_cost2 +
+                           perceptual_cost + 
                            rythm_and_beats_cost +
-                           diversity_cost +
-                           beat_duration_cost +
-                           silence_cost +
-                           alternation_cost +
-                           rhythm_cost + 
-                           monotony_cost +
-                        #   cp_cost + 
-                        #   freq_outlier_cost +
+                           10 * diversity_cost +  # * 100
+                           beat_duration_cost +  # 
+                           2 * silence_cost +
+                           10 * alternation_cost + # * 5
+                           20 * rhythm_cost +   # * 50
+                           0.5 *monotony_cost + #0.2
+                           0.5 * cp_cost  + # * .5 
+                           freq_outlier_cost +
                            penalize_peaks_cost +
-                           g_loss_bandwise
+                           g_loss_bandwise +
+                           10 * harmony_cost
                            ) / accumulation_steps
                 g_loss.backward()
                 
@@ -226,24 +249,107 @@ def train_vae_gan(generator,
                 num_g_updates += 1
 
                 # Track generator losses
-                loss_trackers["g_loss_reconstruction"].append(g_cost_reconstruction.item())
-                loss_trackers["g_loss_kl"].append(g_cost_kl.item())
-                loss_trackers["g_loss_gan"].append(g_cost.item())
-                loss_trackers["g_loss_stats"].append(g_cost_stats.item())
-                loss_trackers["fm_loss"].append(fm_cost.item())
-                loss_trackers["smoothing_loss"].append(smoothing_cost.item())
-                loss_trackers["smoothing_loss2"].append(smoothing_cost2.item())
-                loss_trackers["perceptual_loss"].append(perceptual_cost.item())
-                loss_trackers["rythm_and_beats_cost"].append(rythm_and_beats_cost.item())
-                loss_trackers["diversity_loss"].append(diversity_cost.item())
-                loss_trackers["beat_duration_cost"].append(beat_duration_cost.item())  # New tracker
-                loss_trackers["silence_cost"].append(silence_cost.item())        # New tracker
-                loss_trackers["alternation_cost"].append(alternation_cost.item())  # New tracker
-                loss_trackers["enforce_rhythm_cost"].append(rhythm_cost.item())  # New tracker  
-                loss_trackers["monotone_cost"].append(monotony_cost.item())  # New tracker                
-                loss_trackers["cb_percept_cost"].append(cp_cost.item())                 
-                loss_trackers["freq_outlier_cost"].append(freq_outlier_cost.item()) 
-                loss_trackers["penalize_peaks_cost"].append(penalize_peaks_cost.item())                
+                # Add logs for bandwise generator losses
+                for band_loss_name, band_loss_value in g_terms.items():
+                    if isinstance(band_loss_value, torch.Tensor):
+                        loss_trackers[band_loss_name].append(band_loss_value.item())
+                    else:
+                        loss_trackers[band_loss_name].append(band_loss_value)
+
+                if isinstance(g_cost_reconstruction, torch.Tensor):
+                    loss_trackers["g_loss_reconstruction"].append(g_cost_reconstruction.item())
+                else:
+                    loss_trackers["g_loss_reconstruction"].append(g_cost_reconstruction)
+
+                if isinstance(g_cost_kl, torch.Tensor):
+                    loss_trackers["g_loss_kl"].append(g_cost_kl.item())
+                else:
+                    loss_trackers["g_loss_kl"].append(g_cost_kl)
+
+                if isinstance(g_cost, torch.Tensor):
+                    loss_trackers["g_loss_gan"].append(g_cost.item())
+                else:
+                    loss_trackers["g_loss_gan"].append(g_cost)
+
+                if isinstance(g_cost_stats, torch.Tensor):
+                    loss_trackers["g_loss_stats"].append(g_cost_stats.item())
+                else:
+                    loss_trackers["g_loss_stats"].append(g_cost_stats)
+
+                if isinstance(fm_cost, torch.Tensor):
+                    loss_trackers["fm_loss"].append(fm_cost.item())
+                else:
+                    loss_trackers["fm_loss"].append(fm_cost)
+
+                if isinstance(smoothing_cost, torch.Tensor):
+                    loss_trackers["smoothing_loss"].append(smoothing_cost.item())
+                else:
+                    loss_trackers["smoothing_loss"].append(smoothing_cost)
+
+                if isinstance(smoothing_cost2, torch.Tensor):
+                    loss_trackers["smoothing_loss2"].append(smoothing_cost2.item())
+                else:
+                    loss_trackers["smoothing_loss2"].append(smoothing_cost2)
+
+                if isinstance(perceptual_cost, torch.Tensor):
+                    loss_trackers["perceptual_loss"].append(perceptual_cost.item())
+                else:
+                    loss_trackers["perceptual_loss"].append(perceptual_cost)
+
+                if isinstance(rythm_and_beats_cost, torch.Tensor):
+                    loss_trackers["rythm_and_beats_cost"].append(rythm_and_beats_cost.item())
+                else:
+                    loss_trackers["rythm_and_beats_cost"].append(rythm_and_beats_cost)
+
+                if isinstance(diversity_cost, torch.Tensor):
+                    loss_trackers["diversity_loss"].append(diversity_cost.item())
+                else:
+                    loss_trackers["diversity_loss"].append(diversity_cost)
+
+                if isinstance(beat_duration_cost, torch.Tensor):
+                    loss_trackers["beat_duration_cost"].append(beat_duration_cost.item())  # New tracker
+                else:
+                    loss_trackers["beat_duration_cost"].append(beat_duration_cost)
+
+                if isinstance(silence_cost, torch.Tensor):
+                    loss_trackers["silence_cost"].append(silence_cost.item())        # New tracker
+                else:
+                    loss_trackers["silence_cost"].append(silence_cost)
+
+                if isinstance(alternation_cost, torch.Tensor):
+                    loss_trackers["alternation_cost"].append(alternation_cost.item())  # New tracker
+                else:
+                    loss_trackers["alternation_cost"].append(alternation_cost)
+
+                if isinstance(rhythm_cost, torch.Tensor):
+                    loss_trackers["rhythm_cost"].append(rhythm_cost.item())  # New tracker
+                else:
+                    loss_trackers["rhythm_cost"].append(rhythm_cost)
+
+                if isinstance(monotony_cost, torch.Tensor):
+                    loss_trackers["monotone_cost"].append(monotony_cost.item())  # New tracker
+                else:
+                    loss_trackers["monotone_cost"].append(monotony_cost)
+
+                if isinstance(cp_cost, torch.Tensor):
+                    loss_trackers["cb_percept_cost"].append(cp_cost.item())
+                else:
+                    loss_trackers["cb_percept_cost"].append(cp_cost)
+
+                if isinstance(freq_outlier_cost, torch.Tensor):
+                    loss_trackers["freq_outlier_cost"].append(freq_outlier_cost.item())
+                else:
+                    loss_trackers["freq_outlier_cost"].append(freq_outlier_cost)
+
+                if isinstance(penalize_peaks_cost, torch.Tensor):
+                    loss_trackers["penalize_peaks_cost"].append(penalize_peaks_cost.item())
+                else:
+                    loss_trackers["penalize_peaks_cost"].append(penalize_peaks_cost)
+                    
+                if isinstance(g_cost_reconstruction, torch.Tensor):
+                        loss_trackers["harmony_cost"].append(g_cost_reconstruction.item())
+                else:
+                        loss_trackers["harmony_cost"].append(g_cost_reconstruction)
 
             # === Discriminator update ===
             for d_substep in range(d_steps_per_g_step):
@@ -251,16 +357,21 @@ def train_vae_gan(generator,
                 with torch.no_grad():
                     noise = torch.randn(batch_size, n_channels, noise_dim, device=device)
                     outputs = generator(noise)
-                    (reconstructed_Super_Ultra_Low, reconstructed_Ultra_Low, reconstructed_Low_Middle,
-                    reconstructed_Low, reconstructed_Middle, reconstructed_High, reconstructed_Ultra_High,
-                    mu_g, logvar_g, fake_music) = outputs
+                    (
+                        reconstructed_Super_Ultra_Low, reconstructed_Ultra_Low, 
+                        reconstructed_Low, reconstructed_Low_Middle, 
+                        reconstructed_Middle, reconstructed_High_Middle, 
+                        reconstructed_High, reconstructed_Ultra_High,
+                        mu_g, logvar_g, fake_music) = outputs
 
                     band_names = [
-                        "Super_Ultra_Low", "Ultra_Low", "Low_Middle", "Low", "Middle", "High_Hiddle", "High", "Ultra_High"
+                        "Super_Ultra_Low", "Ultra_Low", "Low_Middle", "Low", "Middle", "High_Middle", "High", "Ultra_High"
                     ]
                     reconstructed_bands = [
-                        reconstructed_Super_Ultra_Low, reconstructed_Ultra_Low, reconstructed_Low_Middle,
-                        reconstructed_Low, reconstructed_Middle, reconstructed_High, reconstructed_Ultra_High
+                        reconstructed_Super_Ultra_Low, reconstructed_Ultra_Low, 
+                        reconstructed_Low, reconstructed_Low_Middle,
+                        reconstructed_Middle, reconstructed_High_Middle, 
+                        reconstructed_High, reconstructed_Ultra_High
                     ]
                     fake_band_signals = {k: v for k, v in zip(band_names, reconstructed_bands)}
                 d_fake_logits = discriminator(fake_music)
@@ -281,7 +392,7 @@ def train_vae_gan(generator,
                                                                                 complex_weight=comb_percept_lambda,
                                                                                 multi_scale_weight=comb_percept_lambda)
                 freq_outlier_cost_d = loss_weights["freq_outlier_cost_d"] * spectral_outlier_discriminator_loss(noisy_real_music, fake_music, sample_rate)
-                beat_timing_cost_d = beat_timing_loss(beats, fake_beats)
+                beat_timing_cost_d = 0.01 * loss_weights["beat_timing_cost_d" ] * beat_timing_loss(beats, fake_beats)
 
                 d_loss_real = criterion_gan(d_real_logits, real_labels)
                 d_loss_fake = criterion_gan(d_fake_logits, fake_labels)
@@ -290,14 +401,14 @@ def train_vae_gan(generator,
                 d_loss_bandwise, d_terms = bandwise_discriminator_loss(fake_band_signals, real_band_signals, discriminator, criterion_gan, real_labels, fake_labels, loss_weights)
 
                 # Print d_terms for this batch
-                print(f"Batch {batch_idx} (Discriminator) bandwise loss terms: {d_terms}")
+               # print(f"Batch {batch_idx} (Discriminator) bandwise loss terms: {d_terms}")
 
                 d_loss = (d_loss_real +
                           d_loss_fake + 
                           beat_duration_d +
-                          silence_cost_d +
-                          alternation_cost_d +
-                          detection_cost_d +
+                          silence_cost_d + # * 3
+                          alternation_cost_d + # * 20
+                          detection_cost_d +  # * 20
                           cp_cost_d +
                           freq_outlier_cost_d  +
                           beat_timing_cost_d +
@@ -312,13 +423,50 @@ def train_vae_gan(generator,
                 num_d_updates += 1
 
                 # Track discriminator losses
-                loss_trackers["d_loss"].append(d_loss.item())
-                loss_trackers["beat_duration_cost_d"].append(beat_duration_d.item())  # New tracker
-                loss_trackers["silence_cost_d"].append(silence_cost_d.item())        # New tracker
-                loss_trackers["alternation_cost_d"].append(alternation_cost_d.item())  # New tracker
-                loss_trackers["enforce_rhythm_cost_d"].append(detection_cost_d.item())  # New tracker
-                loss_trackers["cb_percept_cost_d"].append(cp_cost_d.item())  
-                loss_trackers["beat_timing_cost_d"].append(beat_timing_cost_d.item())                 
+
+              # Add logs for bandwise discriminator losses
+                for band_loss_name, band_loss_value in d_terms.items():
+                    if isinstance(band_loss_value, torch.Tensor):
+                        loss_trackers[band_loss_name].append(band_loss_value.item())
+                    else:
+                        loss_trackers[band_loss_name].append(band_loss_value)
+
+
+                if isinstance(detection_cost_d, torch.Tensor):
+                    loss_trackers["rhythm_cost_d"].append(detection_cost_d.item())
+                else:
+                    loss_trackers["rhythm_cost_d"].append(detection_cost_d)
+                
+                # Track discriminator losses
+                if isinstance(d_loss, torch.Tensor):
+                    loss_trackers["d_loss"].append(d_loss.item())
+                else:
+                    loss_trackers["d_loss"].append(d_loss)
+
+                if isinstance(beat_duration_d, torch.Tensor):
+                    loss_trackers["beat_duration_cost_d"].append(beat_duration_d.item())  # New tracker
+                else:
+                    loss_trackers["beat_duration_cost_d"].append(beat_duration_d)
+
+                if isinstance(silence_cost_d, torch.Tensor):
+                    loss_trackers["silence_cost_d"].append(silence_cost_d.item())        # New tracker
+                else:
+                    loss_trackers["silence_cost_d"].append(silence_cost_d)
+
+                if isinstance(alternation_cost_d, torch.Tensor):
+                    loss_trackers["alternation_cost_d"].append(alternation_cost_d.item())  # New tracker
+                else:
+                    loss_trackers["alternation_cost_d"].append(alternation_cost_d)
+
+                if isinstance(cp_cost_d, torch.Tensor):
+                    loss_trackers["cb_percept_cost_d"].append(cp_cost_d.item())
+                else:
+                    loss_trackers["cb_percept_cost_d"].append(cp_cost_d)
+
+                if isinstance(beat_timing_cost_d, torch.Tensor):
+                    loss_trackers["beat_timing_cost_d"].append(beat_timing_cost_d.item())
+                else:
+                    loss_trackers["beat_timing_cost_d"].append(beat_timing_cost_d)               
 
         mean_g_loss_reconstruction = epoch_g_loss_recon_sum / num_g_updates if num_g_updates > 0 else 0.0
         d_loss_div = num_d_updates if num_d_updates > 0 else 1

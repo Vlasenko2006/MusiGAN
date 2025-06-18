@@ -82,7 +82,7 @@ class VariationalAttentionModel(nn.Module):
     
         # Prepare band dictionary
         band_names = [
-            "Super_Ultra_Low", "Ultra_Low", "Low", "Low_Middle", "Middle", "High", "Ultra_High"
+            "Super_Ultra_Low", "Ultra_Low", "Low", "Low_Middle", "Middle", "High_Middle" , "High", "Ultra_High"
         ]
         reconstructed_bands = [
             reconstructed_Super_Ultra_Low, reconstructed_Ultra_Low, reconstructed_Low,

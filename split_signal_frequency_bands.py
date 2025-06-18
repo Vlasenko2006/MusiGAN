@@ -11,16 +11,59 @@ def split_signal_frequency_bands(signals, fs=12000):
         band_signals: dict, keys are band names, values are torch.Tensor of same shape as input (time domain)
         fband_signals: dict, keys are band names, values are torch.Tensor of same shape as rfft output (frequency domain)
     """
+    
+    # bands = {
+    #     "Super_Ultra_Low": (15, 200),
+    #     "Ultra_Low": (200, 500),
+    #     "Low": (500, 900),
+    #     "Low_Middle": (900, 1400),
+    #     "Middle": (1400, 2000),
+    #     "High_Middle":(2001, 2002),
+    #     "High": (2003, 2004),
+    #     "Ultra_High": (2005, 2006)
+    # }
+    
+    
+    
+    
+    
     bands = {
         "Super_Ultra_Low": (0, 200),
         "Ultra_Low": (200, 500),
         "Low": (500, 900),
         "Low_Middle": (900, 1400),
         "Middle": (1400, 2000),
-        "High_Hiddle":(2000, 2700),
+        "High_Middle":(2000, 2700),
         "High": (2700, 3700),
         "Ultra_High": (3700, 6000)
     }
+    
+    
+    
+#    bands = {
+#        "Super_Ultra_Low": (250, 275),
+#        "Ultra_Low": (285, 310),
+#        "Low": (320, 335),
+#        "Low_Middle": (345, 360),
+#        "Middle": (380, 400),
+#        "High_Middle":(420, 450),
+#        "High": (480, 505),
+#        "Ultra_High": (515, 530)
+#    }
+
+    # bands = {
+    #     "Super_Ultra_Low": (130, 176),
+    #     "Ultra_Low": (260, 340),
+    #     "Low": (380, 450),
+    #     "Low_Middle": (490, 530),
+    #     "Middle": (570, 600),
+    #     "High_Middle":(650, 670),
+    #     "High": (770, 800),
+    #     "Ultra_High": (880, 890)
+    # }
+
+    
+    
     seq_length = signals.shape[-1]
     device = signals.device
     dtype = signals.dtype
@@ -50,16 +93,56 @@ def merge_band_signals(fband_signals, fs=12000):
         merged_signal: torch.Tensor, [batch, channels, seq_length] (time domain)
     """
     # Define the frequency bands (Hz)
+    
+    
+    
+    # bands = {
+    #     "Super_Ultra_Low": (15, 200),
+    #     "Ultra_Low": (200, 500),
+    #     "Low": (500, 900),
+    #     "Low_Middle": (900, 1400),
+    #     "Middle": (1400, 2000),
+    #     "High_Middle":(2001, 2002),
+    #     "High": (2003, 2004),
+    #     "Ultra_High": (2005, 2006)
+    # }
+    
+    
+    
+    
     bands = {
         "Super_Ultra_Low": (0, 200),
         "Ultra_Low": (200, 500),
         "Low": (500, 900),
         "Low_Middle": (900, 1400),
         "Middle": (1400, 2000),
-        "High_Hiddle":(2000, 2700),
+        "High_Middle":(2000, 2700),
         "High": (2700, 3700),
         "Ultra_High": (3700, 6000)
     }
+    
+    
+#    bands = {
+#        "Super_Ultra_Low": (250, 275),
+#        "Ultra_Low": (285, 310),
+#        "Low": (320, 335),
+#        "Low_Middle": (345, 360),
+#        "Middle": (380, 400),
+#        "High_Middle":(420, 450),
+#        "High": (480, 505),
+#        "Ultra_High": (515, 530)
+#    }
+    
+    # bands = {
+    #     "Super_Ultra_Low": (130, 176),
+    #     "Ultra_Low": (260, 340),
+    #     "Low": (380, 450),
+    #     "Low_Middle": (490, 530),
+    #     "Middle": (570, 600),
+    #     "High_Middle":(650, 670),
+    #     "High": (770, 800),
+    #     "Ultra_High": (880, 890)
+    # }    
 
     # Get reference dimensions
     ref_band = next(iter(fband_signals.values()))

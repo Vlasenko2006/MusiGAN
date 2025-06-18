@@ -635,9 +635,9 @@ def bandwise_generator_loss(fake_band_signals, real_band_signals, fband_signals,
     if discriminator is not None and real_labels is not None:
         merged_fake = sum(fake_band_signals.values())
         g_gan_loss = criterion_gan(discriminator(merged_fake), real_labels)
-        if loss_weights is not None and "gan" in loss_weights:
-            g_gan_loss = loss_weights["gan"] * g_gan_loss
-        loss_terms["gan"] = g_gan_loss
+        if loss_weights is not None and "band_gen_total" in loss_weights:
+            g_gan_loss = loss_weights["band_gen_total"] * g_gan_loss
+        loss_terms["band_gen_total"] = g_gan_loss
         total_g_loss += g_gan_loss
 
     return total_g_loss, loss_terms
@@ -674,10 +674,10 @@ def bandwise_discriminator_loss(fake_band_signals, real_band_signals, discrimina
     d_loss_fake = criterion_gan(d_fake_logits, fake_labels)
     d_loss = d_loss_real + d_loss_fake
 
-    if loss_weights is not None and "gan" in loss_weights:
-        d_loss = loss_weights["gan"] * d_loss
+    if loss_weights is not None and "band_d_total" in loss_weights:
+        d_loss = loss_weights["band_d_total"] * d_loss
 
-    loss_terms["gan"] = d_loss
+    loss_terms["band_d_total"] = d_loss
     total_d_loss += d_loss
 
     return total_d_loss, loss_terms

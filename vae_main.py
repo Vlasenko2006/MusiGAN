@@ -12,33 +12,39 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from vae_model_spectral import VariationalAttentionModel, AudioDataset
-from discriminator import Discriminator  # Import the discriminator model
-from vae_train_gan import train_vae_gan, pretrain_generator, pretrain_discriminator  # Updated GAN training functions
+from discriminator import Discriminator_with_mdisc # Import the discriminator model
+from vae_train_gan import train_vae_gan  # Updated GAN training functions
 from utilities import load_checkpoint, save_checkpoint
 from split_and_append_chunks import split_and_append_chunks
 from load_decoder_weights import load_decoder_weights
+from update_checkpoint import update_checkpoint
+from pretrain import pretrain_generator, pretrain_discriminator
 
 # Constants
 dataset_folder = "../dataset"
-batch_size = 8
+batch_size = 8 #0
 epochs = 30000
-pretrain_epochs = 8  # Pretraining epochs for the generator
-sample_rate = 16000
+pretrain_epochs_g = 2  # Pretraining epochs for the generator
+pretrain_epochs_d = 1
+sample_rate = 12000
 seq_len = 120000
-learning_rate = 0.0000051 #*0.25 
-learning_rate_disc = .0001 #*0.25
+learning_rate = 0.0001 *.241 * 1
+learning_rate_disc = .0001 * .241 #* 0.00251#* 10 
 n_channels = 2
 
-accumulation_steps = 8 * 2 * 4 #* 4
-checkpoint_folder_load = "checkpoints_gan_music_double"
-checkpoint_folder = "checkpoints_gan_music_double"
-music_out_folder = "music_out_gan_music_double"
+accumulation_steps = 8 * 2  # * 2 * 2 # * 2 #* 4 #* 4 *2 *2 #* 4 * 4
+checkpoint_folder_load = "checkpoint_new9"
+checkpoint_folder = "checkpoint_new9"
+music_out_folder = "music_scratch20"
+yaml_filepath = "/gpfs/work/vlasenko/07/NN/fatenv/music/MusiGAN/exp/exp8.yaml"
+
 noise_dim = seq_len  # Dimensionality of noise input to the generator
 smoothing = 0.05  # Label smoothing for discriminator
-save_after_nepochs = 10
+save_after_nepochs = 1
+update_discriminator = False
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-resume_from_checkpoint = None  # Set this to the checkpoint path if resuming
+resume_from_checkpoint = 242  # Set this to the checkpoint path if resuming
 
 # Load datasets
 data_sample1 = np.load(os.path.join(dataset_folder, "training_set.npy"), allow_pickle=True)
@@ -47,6 +53,7 @@ data_sample1 = split_and_append_chunks(data_sample1)
 data_sample2 = split_and_append_chunks(data_sample2)
 
 dataset = np.append(data_sample1, data_sample2, axis=0)
+dataset = dataset[:1000,...]
 print("dataset.shape = ", dataset.shape)
 
 audio_dataset = AudioDataset(dataset)
@@ -61,16 +68,17 @@ print("input_dim = ", input_dim)
 generator = VariationalAttentionModel(sound_channels=n_channels, seq_len=seq_len).to(device)
 
 # Discriminator
-discriminator = Discriminator(input_dim=n_channels, n_channels=n_channels, seq_len=seq_len).to(device)
+discriminator = Discriminator_with_mdisc(input_dim=n_channels, n_channels=n_channels, seq_len=seq_len).to(device)
 
 # Optimizers
-g_pretrain_optimizer = torch.optim.Adam(generator.parameters(), lr=1e-5, betas=(0.5, 0.999))
-g_optimizer = torch.optim.Adam(generator.parameters(), lr=learning_rate, betas=(0.5, 0.999))
-d_optimizer = torch.optim.Adam(discriminator.parameters(), lr=learning_rate_disc, betas=(0.5, 0.999))
+g_pretrain_optimizer = torch.optim.Adam(generator.parameters(), lr=1e-7, betas=(0.5, 0.999))
+g_optimizer = torch.optim.AdamW(generator.parameters(), lr=learning_rate, betas=(0.5, 0.999))
+d_optimizer = torch.optim.AdamW(discriminator.parameters(), lr=learning_rate_disc, betas=(0.5, 0.999))
 
 # Loss functions
 pretrain_criterion = nn.SmoothL1Loss()  # For generator pretraining
 gan_criterion = nn.BCEWithLogitsLoss()  # For adversarial training
+
 
 # Load checkpoint if specified
 start_epoch = 1
@@ -78,12 +86,24 @@ if resume_from_checkpoint:
     generator_path = checkpoint_folder_load + "/generator_epoch_" + str(resume_from_checkpoint) + ".pt"
     start_epoch = load_checkpoint(generator_path, generator, g_optimizer)
     discriminator_path = checkpoint_folder_load + "/discriminator_epoch_" + str(resume_from_checkpoint) + ".pt"
-    start_epoch = load_checkpoint(discriminator_path, discriminator, d_optimizer)
+    if update_discriminator:
+        start_epoch = update_checkpoint(discriminator_path, discriminator, d_optimizer)
+        pretrain_discriminator(discriminator,
+                           generator,
+                           train_loader,
+                           g_optimizer,
+                           device,
+                           noise_dim,
+                           n_channels=2,
+                           pretrain_epochs=pretrain_epochs_d ,
+                           smoothing=0.0)
+    else:
+        start_epoch = load_checkpoint(discriminator_path, discriminator, d_optimizer)
 
 # Pretrain the generator
 
 if start_epoch == 1:
-    load_decoder_weights(generator, "../Lets_Rock/checkpoints_trans5/model_epoch_20.pt")
+    #load_decoder_weights(generator, "../Lets_Rock/checkpoints_trans5/model_epoch_20.pt")
     print("Pretraining the generator...")
     pretrain_generator(generator, 
                        train_loader, 
@@ -92,7 +112,8 @@ if start_epoch == 1:
                        device, 
                        noise_dim, 
                        n_channels,
-                       pretrain_epochs)
+                       pretrain_epochs = pretrain_epochs_g )
+
     pretrain_discriminator(discriminator,
                            generator,
                            train_loader,
@@ -100,8 +121,8 @@ if start_epoch == 1:
                            device,
                            noise_dim,
                            n_channels=2,
-                           pretrain_epochs=2,
-                           smoothing=0.1)
+                           pretrain_epochs=pretrain_epochs_d ,
+                           smoothing=0.0)
 
 
 
@@ -122,4 +143,6 @@ train_vae_gan(generator,
           music_out_folder, 
           accumulation_steps=accumulation_steps, 
           smoothing=smoothing, 
-          save_after_nepochs=save_after_nepochs)
+          save_after_nepochs=save_after_nepochs,
+          yaml_filepath = yaml_filepath,
+          batch_size = batch_size)
