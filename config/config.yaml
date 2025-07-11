@@ -2,7 +2,7 @@
 checkpoint_folder_load: "checkpoint_piano_hards4"
 checkpoint_folder: "checkpoint_piano_hards4"
 music_out_folder: "music_scratch20"
-dataset_folder: "../dataset_piano"
+dataset_folder: "../../dataset_piano"
 save_after_nepochs: 1
 resume_from_checkpoint: false
 
@@ -28,17 +28,13 @@ model:
   n_channels: 128
   seq_len: 16500
   latent_seq_len: 500
-  use_gaussians: false
+  use_gaussians: True
+  num_of_gaussians: 6
   dropout: 0.1
   latent_dim: 512
   num_heads: 8
   num_layers: 1
   band_count: 8
-
-
-
-
-
 
 
 # Saving data
