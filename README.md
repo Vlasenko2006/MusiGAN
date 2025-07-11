@@ -1,6 +1,11 @@
 # MusiGAN
 Under construction
 
+## prepare_dataset.py
+Converts .mp3 musical files in your player into numpy vaweformat arrays. Each array represents exactly 2-minute musical pattern. 
+## create_dataset.py
+General purpose musical dataset creation function. It takes numpy arrays representing muical chunks in vaweformat obtained from **prepare_dataset.py**. Combine pairs of these chunks: [starting musical pattern, continuation of the pattern] and scrambles them, splitting by trainin and validation sets.   
+
 
 # Understanding GAN Loss Values: D, G, Recon & Oscillation
 
