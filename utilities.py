@@ -10,7 +10,6 @@ import os
 import numpy as np
 import torch
 
-# Generate and save music samples as NumPy files
 
 # Save model checkpoint
 def save_checkpoint(model, optimizer, epoch, checkpoint_folder, model_name="model"):

@@ -12,14 +12,15 @@ import torch.nn.functional as F
 from copy import deepcopy
 
 class VariationalEncoderDecoder(nn.Module):
-    def __init__(self, input_dim,
-                 n_channels=64,
+    def __init__(self, input_dim, num_heads=2,
+                 num_layers=1,
+                 n_channels=64, 
                  n_seq=1000, 
-                 latent_dim=128,
-                 song_duration=16500,
-                 dropout_rate=0.2, 
-                 use_gaussians = False
-                 ):
+                 latent_dim=128, 
+                 song_duration=16500, 
+                 dropout_rate=0.2,
+                 use_gaussians = False,
+                 num_of_gaussians =3):
         
         super(VariationalEncoderDecoder, self).__init__()
 
@@ -29,6 +30,10 @@ class VariationalEncoderDecoder(nn.Module):
         self.song_duration = song_duration
         self.eps = 10e-12
         self.use_gaussians = use_gaussians
+        self.num_of_gaussians = num_of_gaussians
+        
+        
+        
         # Dropout layer
         self.dropout = nn.Dropout(p=dropout_rate)
 
@@ -50,8 +55,11 @@ class VariationalEncoderDecoder(nn.Module):
 
         # Decoder
         self.latent_to_decoder = nn.Linear(latent_dim, n_channels)
-        self.latent_to_gaussians = nn.Linear(latent_dim * self.n_seq, 8)
-        self.latent_to_gaussians_activation = nn.ReLU()
+        self.gaussians = nn.Sequential(
+            nn.Linear(latent_dim * self.n_seq, self.num_of_gaussians * 4),
+            nn.ReLU(),
+            nn.Linear(self.num_of_gaussians * 4, self.num_of_gaussians * 2 )
+        )
                 
         
         
@@ -118,39 +126,39 @@ class VariationalEncoderDecoder(nn.Module):
         eps = torch.randn_like(std)
         return mu + eps * std
     
-    def learnable_filter(self, x, kernel_sizes, kernel_centers, num_of_kernels=4):
+
+    def learnable_filter(self, x, kernel_sizes, kernel_centers, num_of_kernels=33):
         batch, nchannels, nlength = x.shape
-     #   print("kernel_sizes, ", kernel_sizes)
-     #   print("kernel_centers = ", kernel_centers)
+    
         # Create a Gaussian distribution over a large enough range
         ones = torch.arange(-nlength * 1.5, nlength * 1.5, device=x.device)  # Large enough range
-        
-        # Initialize result tensor
-        filtered_output = torch.zeros_like(x)
-        
-        # Apply Gaussian filters for each kernel center across batches
-        for b in range(batch):
-            for kernel_center, kernel_size in zip(kernel_centers[b, :], kernel_sizes[b, :]):
-              #  print("kernel_center, kernel_size", kernel_center, kernel_size)
-                center_value = -8000 + 16000 * kernel_center
-                gaussian = torch.exp(-0.5 * ((ones - center_value) / (kernel_size * 4000))**2)  # Center Gaussian at kernel_center
-                
-                # Slice Gaussian to match input length
-                start = len(ones) // 2 - nlength // 2
-                end = start + nlength
-                gaussian = gaussian[start:end]
-                
-                # Reshape Gaussian to match input dimensions
-                gaussian = gaussian.unsqueeze(0).unsqueeze(0)  # Shape: [1, 1, nlength]
-                
-                # Accumulate filtered results for the current batch
-                filtered_output[b, 0, :] += x[b, 0, :] * gaussian.squeeze(0).squeeze(0)
-                filtered_output[b, 1, :] += x[b, 1, :] * gaussian.squeeze(0).squeeze(0)
-
+        ones = ones.unsqueeze(0).unsqueeze(0).repeat(batch, num_of_kernels, 1)  # Shape: [batch, num_of_kernels, extended_length]
+    
+        # Compute center values for all kernel centers
+        center_values = -8000 + 16000 * kernel_centers.unsqueeze(-1)  # Shape: [batch, num_of_kernels, 1]
+    
+        # Compute Gaussian distributions for all kernels in the batch
+        kernel_sizes_expanded = kernel_sizes.unsqueeze(-1)  # Shape: [batch, num_of_kernels, 1]
+        gaussians = torch.exp(-0.5 * ((ones - center_values) / (kernel_sizes_expanded * 4000))**2)  # Shape: [batch, num_of_kernels, extended_length]
+    
+        # Slice Gaussian to match input length
+        start = (ones.size(-1) // 2) - (nlength // 2)
+        end = start + nlength
+        gaussians = gaussians[:, :, start:end]  # Shape: [batch, num_of_kernels, nlength]
+    
+        # Reshape Gaussians for broadcasting
+        gaussians = gaussians.unsqueeze(2)  # Shape: [batch, num_of_kernels, 1, nlength]
+    
+        # Expand x for broadcasting with gaussians
+        x_expanded = x.unsqueeze(1)  # Shape: [batch, 1, nchannels, nlength]
+    
+        # Apply Gaussian filters (element-wise multiplication and summation across kernels)
+        filtered_output = torch.sum(x_expanded * gaussians, dim=1)  # Shape: [batch, nchannels, nlength]
+    
         # Normalize filtered_output for each batch
         batch_sums = torch.amax(filtered_output, dim=(1, 2), keepdim=True)  # Compute max for each batch
-        filtered_output = filtered_output / batch_sums  # Normalize by batch max
-        
+        filtered_output = filtered_output / batch_sums.clamp(min=1e-12)  # Normalize by batch max (prevent division by zero)
+    
         return filtered_output
     
 
@@ -158,12 +166,11 @@ class VariationalEncoderDecoder(nn.Module):
         
         if self.use_gaussians == True:
             zr = z.reshape(z.size(0), -1)
-            x_g = self.latent_to_gaussians(zr)
-            x_g = torch.abs(x_g) #self.latent_to_gaussians_activation(x_g) 
-            #x_g[:,4:] = F.hardsigmoid((x_g[:,4:]-1)*3 )
-#            x_g = torch.cat([x_g[:, :4], F.hardsigmoid((x_g[:, 4:] - 1) * 3)], dim=1)
-            x_g = torch.cat([2 * F.sigmoid( x_g[:, :4] - 10 ), x_g[:, 4:] /(torch.max(x_g[:, 4:])+0.0001) ], dim=1)        
+            x_g = self.gaussians(zr)
+            x_g = torch.cat([10 * F.sigmoid( x_g[:, :self.num_of_gaussians]), \
+                             torch.abs(x_g[:, self.num_of_gaussians:]) /(torch.max(torch.abs(x_g[:, self.num_of_gaussians:]))+0.0001) ], dim=1)        
         
+
         # Latent to decoder
         x = self.latent_to_decoder(z)  # [batch, n_seq, n_channels]
         x = x.permute(0, 2, 1)  # [batch, n_channels, n_seq]
@@ -199,9 +206,8 @@ class VariationalEncoderDecoder(nn.Module):
         
         reconstructed = self.fp(x4)
         if self.use_gaussians:
-            
-            reconstructed = self.learnable_filter(reconstructed, x_g[:,:4], x_g[:,4:])
-        
+            reconstructed = self.learnable_filter(reconstructed, x_g[:,:self.num_of_gaussians], x_g[:,self.num_of_gaussians:], num_of_kernels = self.num_of_gaussians)
+
         return reconstructed
     
 

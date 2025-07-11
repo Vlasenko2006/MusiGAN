@@ -55,9 +55,9 @@ print("input_dim = ", input_dim)
 generator = VariationalAttentionModel(**config["model"]).to(device)
 
 # Discriminator
-discriminator = Discriminator_with_mdisc(input_dim = config.model["sound_channels"],
-                                         n_channels = config.model["sound_channels"], # FIXME!!! Possible duplication
-                                         seq_len = config.model["seq_len"]
+discriminator = Discriminator_with_mdisc(input_dim = config["model"]["sound_channels"],
+                                         n_channels = config["model"]["sound_channels"], # FIXME!!! Possible duplication
+                                         seq_len = config["model"]["seq_len"]
                                          ).to(device)
 
 # Optimizers
@@ -102,7 +102,7 @@ if config["resume_from_checkpoint"]:
                            g_optimizer,
                            device,
                            config["noise_dim"],
-                           n_channels=config.model["sound_channels"],
+                           n_channels=config["model"]["sound_channels"],
                            pretrain_epochs=config["pretrain_epochs_d"] ,
                            smoothing=0.0)
     else:
@@ -121,7 +121,7 @@ if start_epoch == 1:
                        pretrain_criterion, 
                        device, 
                        config["noise_dim"], 
-                       config.model["sound_channels"],
+                       config["model"]["sound_channels"],
                        pretrain_epochs = config["pretrain_epochs_g"] )
 
     pretrain_discriminator(discriminator,
@@ -130,7 +130,7 @@ if start_epoch == 1:
                            g_optimizer,
                            device,
                            config["noise_dim"],
-                           n_channels=config.model["sound_channels"],
+                           n_channels=config["model"]["sound_channels"],
                            pretrain_epochs = config["pretrain_epochs_d"] ,
                            smoothing=0.0)
 
@@ -147,7 +147,7 @@ train_vae_gan(generator,
           config['epochs'],     # mind using **kwargs
           device, 
           config["noise_dim"],
-          config.model["sound_channels"], 
+          config["model"]["sound_channels"], 
           config["sample_rate"], 
           config['checkpoint_folder'], 
           config["music_out_folder"], 

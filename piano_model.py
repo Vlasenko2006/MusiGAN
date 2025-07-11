@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
-from piano_encoder_decoder_gaussians import VariationalEncoderDecoder
+from piano_encoder_decoder import VariationalEncoderDecoder
 
 
 
@@ -62,6 +62,7 @@ class VariationalAttentionModel(nn.Module):
         latent_dim=128 * 4,
         band_count=8,
         use_gaussians = False,
+        num_of_gaussians = 6,
         dropout = 0.1
     ):
         super().__init__()
