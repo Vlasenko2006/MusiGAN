@@ -1,0 +1,80 @@
+# Checkpoint and data settings
+checkpoint_folder_load: "checkpoint_piano_hards4"
+checkpoint_folder: "checkpoint_piano_hards4"
+music_out_folder: "music_scratch20"
+dataset_folder: "../dataset_piano"
+save_after_nepochs: 1
+resume_from_checkpoint: false
+
+# Training Settings
+batch_size: 64
+epochs: 30000
+pretrain_epochs_g: 5         # Pretraining epochs for the generator
+pretrain_epochs_d: 1
+sample_rate: null
+learning_rate: 0.0002
+learning_rate_disc: 0.0001
+accumulation_steps: 16
+smoothing: 0.2               # Label smoothing for discriminator
+dropout: 0.2
+
+
+# Noise settings
+noise_dim: 48000             # 3000 * 4 * 4
+
+# Model settings
+model:
+  sound_channels: 2
+  n_channels: 128
+  seq_len: 16500
+  latent_seq_len: 500
+  use_gaussians: false
+  dropout: 0.1
+  latent_dim: 512
+  num_heads: 8
+  num_layers: 1
+  band_count: 8
+
+
+
+
+
+
+
+# Saving data
+update_discriminator: false
+
+# Initialize dictionaries to track loss values
+loss_trackers:
+  g_loss_reconstruction: []
+  g_loss_kl: []
+  g_loss_gan: []
+  d_loss: []
+  g_no_seconds_loss: []
+  g_no_silence_loss: []
+  g_melody_loss: []
+  g_melody_loss_2: []
+  d_silence_loss: []
+  d_melody_loss: []
+  d_compute_std_loss: []
+  d_min_max_stats_loss: []
+  g_compute_std_loss: []
+  g_min_max_stats_loss: []
+  d_kl_songs_loss: []
+
+# Cost weights
+loss_weights:
+  g_cost_reconstruction: 2
+  g_cost: 20
+  g_cost_kl: 0.00005
+  g_no_seconds_cost: 1
+  g_no_silence_cost: 1
+  g_melody_cost: 0.75
+  g_melody_cost_2: 1
+  d_silence_cost: 1
+  d_melody_cost: 1
+  d_compute_std_cost: 1
+  d_min_max_stats_cost: 1
+  g_compute_std_cost: 1
+  g_min_max_stats_cost: 1
+  d_kl_song_cost: 0.1
