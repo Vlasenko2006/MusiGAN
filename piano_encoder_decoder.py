@@ -167,8 +167,9 @@ class VariationalEncoderDecoder(nn.Module):
         if self.use_gaussians == True:
             zr = z.reshape(z.size(0), -1)
             x_g = self.gaussians(zr)
-            x_g = torch.cat([10 * F.sigmoid( x_g[:, :self.num_of_gaussians]), \
-                             torch.abs(x_g[:, self.num_of_gaussians:]) /(torch.max(torch.abs(x_g[:, self.num_of_gaussians:]))+0.0001) ], dim=1)        
+            x_g = torch.abs(x_g)
+            x_g = torch.cat([4 * F.sigmoid( x_g[:, :self.num_of_gaussians] - 10), \
+                             x_g[:, self.num_of_gaussians:] /torch.max(x_g[:, self.num_of_gaussians:]+0.0001) ], dim=1)        
         
 
         # Latent to decoder
