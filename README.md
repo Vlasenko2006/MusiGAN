@@ -1,10 +1,130 @@
+
 # MusiGAN
 Under construction
+
+
+
+## Data Preparation
 
 ## prepare_dataset.py
 Converts .mp3 musical files in your player into numpy vaweformat arrays. Each array represents exactly 2-minute musical pattern. 
 ## create_dataset.py
 General purpose musical dataset creation function. It takes numpy arrays representing muical chunks in vaweformat obtained from **prepare_dataset.py**. Combine pairs of these chunks: [starting musical pattern, continuation of the pattern] and scrambles them, splitting by trainin and validation sets.   
+
+
+
+# Dependency Tree and Function Explanations
+
+## Dependency Tree
+
+```
+piano_main.py
+  ├─ config_reader.py           (load_config_from_yaml)
+  ├─ split_and_append_chunks.py (split_and_append_chunks)
+  ├─ utilities.py               (load_checkpoint)
+  ├─ update_checkpoint.py       (update_checkpoint)
+  ├─ piano_model.py
+  │    └─ piano_encoder_decoder.py (VariationalEncoderDecoder, intantiates in piano_main.py)
+  ├─ discriminator.py
+  ├─ piano_pretrain.py          (pretrain_generator, pretrain_discriminator)
+  └─ piano_train.py
+       ├─ vae_utilities.py      (save_checkpoint)
+       └─ loss_functions.py     (kl_divergence_loss, no_seconds_loss, etc.)
+```
+
+---
+
+## Brief Explanation of Each Module/Function
+
+### **piano_main.py**
+The main script orchestrating the whole workflow:  
+- Loads configuration and datasets  
+- Initializes models (Generator and Discriminator)  
+- Loads checkpoints if needed  
+- Pretrains models  
+- Launches the main GAN training loop
+
+---
+
+### **config_reader.py**
+**Function:** `load_config_from_yaml`  
+Loads configuration parameters from a YAML file, making it easy to manage settings for model training and evaluation.
+
+---
+
+### **split_and_append_chunks.py**
+**Function:** `split_and_append_chunks`  
+Splits waveform data into smaller, fixed-size chunks and optionally appends them together. Prepares audio data for model input.
+
+---
+
+### **utilities.py**
+**Function:** `load_checkpoint`  
+Handles loading of saved model checkpoints, allowing training to resume or evaluation of pre-trained models.
+
+---
+
+### **update_checkpoint.py**
+**Function:** `update_checkpoint`  
+Updates the checkpoint for a given model, typically saving the latest weights or optimizer state.
+
+---
+
+### **piano_model.py**
+**Classes:**  
+- `VariationalAttentionModel`: The main generator model combining variational autoencoding and attention mechanisms for music generation.
+- `AudioDataset`: Processes and normalizes audio data for model input.
+
+**Depends on:**  
+- `piano_encoder_decoder.py` for the encoder-decoder architecture.
+
+---
+
+### **piano_encoder_decoder.py**
+**Class:** `VariationalEncoderDecoder`  
+Defines the encoder and decoder structures used in the generator, supporting variational inference for improved generative modeling.
+
+---
+
+### **discriminator.py**
+**Class:** `Discriminator_with_mdisc`  
+Implements the discriminator model for the GAN, distinguishing between real and generated audio samples.
+
+---
+
+### **piano_pretrain.py**
+**Functions:**  
+- `pretrain_generator`: Trains the generator alone before adversarial training.
+- `pretrain_discriminator`: Trains the discriminator alone for improved GAN stability.
+
+---
+
+### **piano_train.py**
+**Function:** `train_vae_gan`  
+Runs the adversarial training loop for the VAE-GAN, handling generator and discriminator updates, loss computation, and checkpointing.
+
+**Depends on:**  
+- `vae_utilities.py` (for saving checkpoints)
+- `loss_functions.py` (for custom loss functions)
+
+---
+
+### **vae_utilities.py**
+**Function:** `save_checkpoint`  
+Saves model and optimizer states to disk during training.
+
+---
+
+### **loss_functions.py**
+**Functions:**  
+Contains custom loss functions such as KL divergence, silence/melody losses, and other domain-specific metrics for training the GAN and VAE.
+
+---
+
+
+
+
+  
 
 
 # Understanding GAN Loss Values: D, G, Recon & Oscillation
