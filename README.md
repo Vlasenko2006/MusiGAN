@@ -1,6 +1,6 @@
 # Musical Generative Adversarial Networks (MusiGANs)
 
-![Example of a fameplay](https://github.com/Vlasenko2006/MusiGAN/tree/main/logo)
+![Example of a fameplay](https://github.com/Vlasenko2006/MusiGAN/blob/main/logo/1.jpg)
 
 
 I probably took on one of the most challenging tasks for myself: building a GAN neural network capable of generating music from white noise.
@@ -33,11 +33,11 @@ A neural network learns by example: if you show it thousands of musical pieces, 
 
 In general, the music discriminator operates much like any other discriminator in a GAN: it receives two signals—one "genuine" (real music from the dataset) and one fake, produced by the generator. It's important to realize that the quality of the generator's output directly depends on the quality of the discriminator: if the discriminator doesn't learn to recognize what music is in general, the generator will never be able to create convincing fakes.
 
-But what's the challenge then?
+### But what's the challenge then?
 
 In standard GANs, during the first epochs, the generator is still untrained, so its outputs are easy to spot—the discriminator's job seems trivial: just distinguish obvious noise and artifacts from real music. If we were training it on just one genre (say, waltz), it would quickly learn to tell it apart from others. But my dataset is a hodgepodge of genres, so the discriminator has to find common patterns across all music, and that's the main difficulty. For example, what could possibly be common between waltz, reggae, and punk rock when even their rhythmic structures are different?
 
-Musical rules are specific to each genre. For instance, in the 1940s, rock and roll baffled conservative listeners raised on classical music because it broke established conventions, and not everyone recognized it as music. The same goes for later genres like punk rock and others.
+Musical rules are specific to each genre. For instance, in the 1940s, rock and roll baffled conservative listeners raised on classical music because it broke established conventions, and not everyone recognized it as music. The same goes for later genres like punk, rock and others.
 
 In such a situation, the discriminator resembles a musical "conservatory professor": it has to learn to decide what qualifies as music in general, without relying solely on familiar patterns from a single genre.
 
