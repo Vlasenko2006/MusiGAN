@@ -7,7 +7,7 @@ I probably took on one of the most challenging tasks for myself: building a GAN 
 
 ### Initial Conditions
 
-1. My training dataset consists of music from my own player.
+1. My training dataset consists of music from my MP3 player in my phone.
 2. The author (that's me) has no formal musical education.
 3. Hardware limitations: a single GPU and about 20 GB of memory.
 
@@ -18,7 +18,7 @@ https://github.com/Vlasenko2006/MusiGAN/tree/main/Music_samples)** 🎵
 
 ---
 
-To solve my problem, I used Generative Adversarial Networks (GANs).
+To solve my problem, I created Generative Adversarial Networks (GANs) from scratch.
 
 #### Generative Adversarial Networks in Simple Terms
 
