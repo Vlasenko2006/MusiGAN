@@ -1,7 +1,43 @@
+# Musical Generative Adversarial Networks (MusiGANs)
 
-# MusiGAN
-Under construction
 
+I probably took on one of the most challenging tasks for myself: building a GAN neural network capable of generating music from white noise.
+
+### Initial Conditions
+
+1. My training dataset consists of music from my own player.
+2. The author (that's me) has no formal musical education.
+3. Hardware limitations: a single GPU and about 20 GB of memory.
+
+Let me say right away: I believe I managed to accomplish the task. But more on that later.
+
+---
+
+To solve my problem, I used Generative Adversarial Networks (GANs).
+
+#### Generative Adversarial Networks in Simple Terms
+
+A GAN consists of a pair of neural networks that learn from each other. One network, the generator, tries to create artificial data (for example, images or music), while the other, the discriminator, learns to distinguish real data from fake. The generator gradually gets better at "fooling" the discriminator, creating increasingly realistic examples, while the discriminator becomes more skilled at spotting fakes. In the process, both networks improve: one in making "realistic" music, the other in identifying forgeries.
+
+---
+
+### How the Music Generator Works
+
+A neural network learns by example: if you show it thousands of musical pieces, it absorbs the concepts of melody, rhythm, and harmony. For instance, I have a network that takes a 10-second music fragment and continues it. But with a GAN, the task is tougher: the network must turn white noise into music. How does it do that? From my observations, during training it "remembers" musical structures (I suspect these are stored in the convolutional layers of the decoder). At the generation stage, the input white noise—essentially just random numbers—determines which patterns (rhythmic, melodic, etc.) the network will "assemble" from these remembered elements. Theoretically, overlaying random patterns should result in cacophony (try mixing several tracks together—you get noise). But here's where the "magic" happens: the transformer, having learned musical rules, selects patterns that both follow musical grammar and are compatible with the "request" made by the white noise.
+
+---
+
+### How the Music Discriminator Works (and Why It's Hard to Train on Diverse Music)
+
+In general, the music discriminator operates much like any other discriminator in a GAN: it receives two signals—one "genuine" (real music from the dataset) and one fake, produced by the generator. It's important to realize that the quality of the generator's output directly depends on the quality of the discriminator: if the discriminator doesn't learn to recognize what music is in general, the generator will never be able to create convincing fakes.
+
+But what's the challenge then?
+
+In standard GANs, during the first epochs, the generator is still untrained, so its outputs are easy to spot—the discriminator's job seems trivial: just distinguish obvious noise and artifacts from real music. If we were training it on just one genre (say, waltz), it would quickly learn to tell it apart from others. But my dataset is a hodgepodge of genres, so the discriminator has to find common patterns across all music, and that's the main difficulty. For example, what could possibly be common between waltz, reggae, and punk rock when even their rhythmic structures are different?
+
+Musical rules are specific to each genre. For instance, in the 1940s, rock and roll baffled conservative listeners raised on classical music because it broke established conventions, and not everyone recognized it as music. The same goes for later genres like punk rock and others.
+
+In such a situation, the discriminator resembles a musical "conservatory professor": it has to learn to decide what qualifies as music in general, without relying solely on familiar patterns from a single genre.
 
 
 ## Data Preparation
