@@ -11,7 +11,10 @@ I probably took on one of the most challenging tasks for myself: building a GAN 
 2. The author (that's me) has no formal musical education.
 3. Hardware limitations: a single GPU and about 20 GB of memory.
 
-Let me say right away: I believe I managed to accomplish the task. But more on that later.
+Let me say right away: I believe I managed to accomplish the task. But more on that later. Check out musical samples crearted by my neural network 
+
+🎵 **[Music samples](
+https://github.com/Vlasenko2006/MusiGAN/tree/main/Music_samples)** 🎵
 
 ---
 
@@ -103,7 +106,11 @@ piano_main.py
 ### `piano_main.py`
 The main script orchestrating the whole workflow:  
 - Loads configuration and datasets  
-- Initializes models (Generator and Discriminator)  
+- Initializes models (Generator and Discriminator)
+- Initializes optimizers for generator and discriminator: `g_optimizer` and `d_optimizer` respectively.
+- Initializes loss criterions:
+  --pretrain_criterion `nn.SmoothL1Loss()`
+  --gan_criterion `nn.BCEWithLogitsLoss()` 
 - Loads checkpoints if needed  
 - Pretrains models  
 - Launches the main GAN training loop
@@ -112,7 +119,7 @@ The main script orchestrating the whole workflow:
 
 ### `config_reader.py`
 **Function:** `load_config_from_yaml`  
-Loads configuration parameters from a YAML file, making it easy to manage settings for model training and evaluation.
+Loads configuration parameters from a YAML file, making it easy to manage settings for model training and evaluation. It holds model hyperparameters, training parameters etc.
 
 ---
 
@@ -175,7 +182,48 @@ Implements the discriminator model for the GAN, distinguishing between real and 
 
 ### `piano_train.py`
 **Function:** `train_vae_gan`  
-Runs the adversarial training loop for the VAE-GAN, handling generator and discriminator updates, loss computation, and checkpointing.
+Runs the adversarial training loop for the VAE-GAN, handling generator and discriminator updates, loss computation, and checkpointing. This trainer orchestrates the training process of a VAE-GAN model for music generation, coordinating both the generator and the discriminator. The workflow includes adversarial training, reconstruction, and a suite of domain-specific regularization losses.
+
+#### Optimizers
+- **Generator Optimizer:**  
+  The generator's parameters are updated via a user-supplied optimizer (`g_optimizer`), typically an Adam or AdamW optimizer in PyTorch use cases.
+- **Discriminator Optimizer:**  
+  The discriminator is trained with a separate optimizer (`d_optimizer`), also user-supplied Adam-based for stable GAN training.
+
+#### Loss Functions (Criterions)
+
+#### Adversarial and Reconstruction Losses
+- **Adversarial Loss (`criterion_gan`)**  
+  `torch.nn.BCEWithLogitsLoss` is used as the primary GAN objective for both generator and discriminator, promoting realistic generation and robust discrimination.
+- **Reconstruction Loss (`criterion_reconstruction`)**  
+  `torch.nn.SmoothL1Loss` is used to encourage accurate reconstruction of real music signals.
+
+#### Generator-Specific Losses
+- **KL Divergence Loss**  
+  Regularizes the latent space of the variational encoder (`kl_divergence_loss`).
+- **No-Seconds Loss, No-Silence Loss**  
+  Penalize excessive silence and unwanted gaps in generated music (`no_seconds_loss`, `no_silence_loss`).
+- **Melody and Statistical Losses**  
+  Encourage melodic structure and match statistical properties of the data (`melody_loss`, `melody_loss_d`, `compute_std_loss_d`, `min_max_stats_loss_d`).
+
+#### Discriminator-Specific Losses
+- **Silence and Melody Losses**  
+  Penalize unrealistic silence or lack of melody in generated samples (`silence_loss_d`, `melody_loss_d`).
+- **Statistical and KL Losses**  
+  Enforce statistical similarity and regularization (`compute_std_loss_d`, `min_max_stats_loss_d`, `kl_loss_songs_d`).
+
+### Training Procedure
+- **Epoch Loop:** Alternates between generator and discriminator updates per batch, with support for gradient accumulation (`accumulation_steps`) for large-scale or memory-constrained training.
+- **Loss Weighting:** All losses are weighted via a `loss_weights` dictionary, allowing fine-grained tuning of the training signal.
+- **Gradient Clipping:** Optional clipping is present (commented out), suggesting mitigation for exploding gradients.
+- **Checkpointing:** Model and optimizer states are periodically saved for reproducibility and evaluation.
+
+### Additional Features
+- **Label Smoothing:** Optional smoothing of real labels for adversarial robustness.
+- **Freeze Options:** The discriminator can be frozen for part of the training schedule.
+- **Loss Tracking:** Extensive per-loss tracking for diagnostics and visualization.
+- **Adaptive Training:** Number of discriminator steps per generator update is configurable.
+
 
 **Depends on:**  
 - `vae_utilities.py` (for saving checkpoints)
@@ -189,8 +237,6 @@ Saves model and optimizer states to disk during training.
 
 ---
 
-
-
 ### `loss_functions.py`
 
 To assist the discriminator, I created “helpers”—special additional terms in its cost function that require any signal classified as “music” to conform to certain basic statistical and structural properties of an audio signal. As a result, the discriminator not only distinguishes between real and generated examples, but also learns to pay attention to key characteristics of music, such as dynamics, variability, the absence of excessive silence or repetition, and other musical patterns. This approach makes training more stable and allows the generator to produce more meaningful and musical results. All these “helpers” are coded here:
@@ -199,8 +245,9 @@ To assist the discriminator, I created “helpers”—special additional terms 
 Contains custom loss functions such as KL divergence, silence/melody losses, and other domain-specific metrics for training the GAN and VAE.
 
 ---
+## How to Set Up the Environment and Install the Model
 
-
+The installation and environment setup process is similar to the instructions provided here: [https://github.com/Vlasenko2006/NeuroNMusE](https://github.com/Vlasenko2006/NeuroNMusE)
 
 
   
