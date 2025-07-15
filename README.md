@@ -1,5 +1,7 @@
 # Musical Generative Adversarial Networks (MusiGANs)
 
+![Example of a fameplay](https://github.com/Vlasenko2006/MusiGAN/tree/main/logo)
+
 
 I probably took on one of the most challenging tasks for myself: building a GAN neural network capable of generating music from white noise.
 
